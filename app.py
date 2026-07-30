@@ -7,6 +7,23 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import xlsxwriter
 
 # ==============================================================================
+# PAGE CONFIGURATION & UI CLEANUP
+# ==============================================================================
+st.set_page_config(page_title="Automated Reporting Portal", page_icon="📊", layout="centered")
+
+# Hide Streamlit header, top-right menu, GitHub repository icons, and footers
+hide_streamlit_branding = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    a[href*="github.com"] {display: none !important;}
+    </style>
+"""
+st.markdown(hide_streamlit_branding, unsafe_allow_html=True)
+
+
+# ==============================================================================
 # SECURITY: Basic Password Authentication
 # ==============================================================================
 def check_password():
@@ -25,6 +42,7 @@ def check_password():
         st.text_input("❌ Incorrect password. Please try again:", type="password", on_change=password_entered, key="password")
         return False
     return True
+
 
 # ==============================================================================
 # REPORT LOGIC WRAPPERS
@@ -465,8 +483,6 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes):
 # MAIN WEB UI
 # ==============================================================================
 if check_password():
-    st.set_page_config(page_title="Automated Reporting Portal", page_icon="📊", layout="centered")
-    
     st.title("📊 Automated Reporting Portal")
     st.markdown("Upload your daily raw data below to instantly generate standardized Excel reports.")
     
