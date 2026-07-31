@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import io
 import datetime
 import openpyxl
@@ -47,6 +48,186 @@ def check_password():
 # ==============================================================================
 # REPORT LOGIC WRAPPERS
 # ==============================================================================
+
+def generate_aliexpress(raw_file_bytes, spv_file_bytes):
+    # 1. LOAD DATA & MAPPING
+    df_spv = pd.read_excel(io.BytesIO(spv_file_bytes))
+    df_spv.columns = df_spv.columns.astype(str).str.strip().str.lower()
+    df_spv['pdv'] = df_spv['pdv'].astype(str).str.strip()
+
+    try:
+        xls = pd.ExcelFile(io.BytesIO(raw_file_bytes))
+        original_sheet_name = '订单综合信息' if '订单综合信息' in xls.sheet_names else xls.sheet_names[0]
+        df_raw = pd.read_excel(xls, sheet_name=original_sheet_name)
+    except ValueError:
+        df_raw = pd.read_excel(io.BytesIO(raw_file_bytes))
+        original_sheet_name = 'Sheet1'
+
+    df_raw_original = df_raw.copy()
+
+    if 'Estado de la orden' in df_raw.columns:
+        df_raw = df_raw[df_raw['Estado de la orden'] != 'Cancelado']
+
+    seller_pdv_map = df_raw[['Compañía remitente', 'Punto de Recogida']].dropna().drop_duplicates(subset=['Compañía remitente'])
+    seller_pdv_map = seller_pdv_map.rename(columns={'Punto de Recogida': 'pdv'})
+    seller_pdv_map['pdv'] = seller_pdv_map['pdv'].astype(str).str.strip()
+
+    # 2. BASE CALCULATIONS (PIVOT LOGIC)
+    df_total = df_raw.groupby('Compañía remitente')['Guía de Rastreo'].count().reset_index(name='Total')
+    df_abnormal = df_raw[df_raw['Estado de la orden'] == 'La recogida falló'].groupby('Compañía remitente')['Guía de Rastreo'].count().reset_index(name='Abnormal')
+
+    pending_statuses = ['Asignado a PDV', 'Asignado a un mensajero', 'Asignado a mensajero', 'Pendiente', 'Creado']
+    df_por_rec = df_raw[df_raw['Estado de la orden'].isin(pending_statuses)].groupby('Compañía remitente')['Guía de Rastreo'].count().reset_index(name='PorRec')
+
+    df_report = df_total.copy()
+    df_report = pd.merge(df_report, df_abnormal, on='Compañía remitente', how='left')
+    df_report = pd.merge(df_report, df_por_rec, on='Compañía remitente', how='left')
+
+    df_report['Total'] = df_report['Total'].fillna(0).astype(int)
+    df_report['Abnormal'] = df_report['Abnormal'].fillna(0).astype(int)
+    df_report['PorRec'] = df_report['PorRec'].fillna(0).astype(int)
+    df_report['Visita'] = df_report['Total'] - df_report['Abnormal'] - df_report['PorRec']
+
+    df_report = pd.merge(df_report, seller_pdv_map, on='Compañía remitente', how='left')
+    df_report = pd.merge(df_report, df_spv[['pdv', 'spv', 'zona']], on='pdv', how='left')
+
+    df_report = df_report.rename(columns={'spv': 'SPV', 'zona': 'ZONA', 'pdv': 'PDV', 'Compañía remitente': 'SELLER'})
+    df_report = df_report.dropna(subset=['SPV']) 
+    df_report = df_report[df_report['SPV'].str.strip() != '']
+
+    df_report['SPV'] = df_report['SPV'].astype(str).str.upper()
+    df_report['ZONA'] = df_report['ZONA'].fillna('').astype(str)
+    df_report['PDV'] = df_report['PDV'].fillna('').astype(str)
+    df_report['SELLER'] = df_report['SELLER'].fillna('').astype(str)
+    df_report = df_report.sort_values(by=['SPV', 'ZONA', 'PDV', 'SELLER'], ascending=[True, True, True, True])
+
+    df_report['Rate'] = np.where(df_report['Total'] > 0, (df_report['Visita'] + df_report['Abnormal']) / df_report['Total'], 0.0)
+
+    df_report['Abnormal_View'] = df_report['Abnormal'].apply(lambda x: '' if x == 0 else int(x))
+    df_report['PorRec_View'] = df_report['PorRec'].apply(lambda x: '' if x == 0 else int(x))
+
+    # 3. DYNAMIC DATE EXTRACTION & FILE NAMING
+    months_es = {1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'}
+
+    if 'Tiempo de registro de la orden' in df_raw.columns:
+        dates = pd.to_datetime(df_raw['Tiempo de registro de la orden']).dt.date
+        o_date = dates.value_counts().idxmax() 
+        r_date = o_date + datetime.timedelta(days=1)
+        
+        if r_date.weekday() == 0: 
+            o_date_prev = o_date - datetime.timedelta(days=1)
+            o_date_zh = f"{o_date_prev.month}月{o_date_prev.day}日 & {o_date.month}月{o_date.day}日"
+            o_date_es = f"{months_es[o_date_prev.month]} {o_date_prev.day} & {months_es[o_date.month]} {o_date.day}"
+        else:
+            o_date_zh = f"{o_date.month}月{o_date.day}日"
+            o_date_es = f"{months_es[o_date.month]} {o_date.day}"
+            
+        r_date_zh = f"{r_date.month}月{r_date.day}日"
+        r_date_es = f"{months_es[r_date.month]} {r_date.day}"
+    else:
+        o_date_zh, o_date_es = "7月29日", "Jul 29"
+        r_date_zh, r_date_es = "7月30日", "Jul 30"
+
+    subtitle_str = f"订单日期：{o_date_zh}, 揽收日期 {r_date_zh} Pedidos: {o_date_es} | Reco: {r_date_es}"
+
+    now = datetime.datetime.now()
+    ts = now.timestamp()
+    ts_rounded = round(ts / 900) * 900
+    now_rounded = datetime.datetime.fromtimestamp(ts_rounded)
+    if now_rounded.minute == 0:
+        time_str = f"{now_rounded.hour}"
+    else:
+        time_str = f"{now_rounded.hour}.{now_rounded.minute:02d}"
+
+    output_filename = f"ALI {r_date_es.upper()} AT {time_str}.xlsx"
+
+    # 4. EXCEL FORMATTING (XLSXWRITER)
+    output = io.BytesIO()
+    writer = pd.ExcelWriter(output, engine='xlsxwriter', engine_kwargs={'options': {'nan_inf_to_errors': True}})
+    workbook = writer.book
+    worksheet = workbook.add_worksheet('AliExpress')
+
+    magenta, yellow, red = '#B0005B', '#FFFF00', '#FF0000'
+
+    title_format = workbook.add_format({'bold': True, 'font_size': 20, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': 'Times New Roman'})
+    subtitle_format = workbook.add_format({'bold': False, 'font_size': 13, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': 'Times New Roman'})
+    header_format = workbook.add_format({'bold': True, 'font_size': 9, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': 'Times New Roman'})
+
+    grand_total_label = workbook.add_format({'bold': True, 'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'border': 1, 'font_name': 'Times New Roman'})
+    grand_total_num = workbook.add_format({'bold': True, 'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'border': 1, 'num_format': '#,##0', 'font_name': 'Times New Roman'})
+    grand_total_pct = workbook.add_format({'bold': True, 'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'border': 1, 'num_format': '0.00%', 'font_name': 'Times New Roman'})
+
+    subtotal_label_yellow = workbook.add_format({'bold': True, 'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'bg_color': yellow, 'font_color': 'black', 'border': 1, 'font_name': 'Times New Roman'})
+    subtotal_num_yellow = workbook.add_format({'bold': True, 'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'bg_color': yellow, 'font_color': 'black', 'border': 1, 'num_format': '#,##0', 'font_name': 'Times New Roman'})
+    subtotal_num_red = workbook.add_format({'bold': True, 'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'bg_color': red, 'font_color': 'white', 'border': 1, 'num_format': '#,##0', 'font_name': 'Times New Roman'})
+    subtotal_pct_red = workbook.add_format({'bold': True, 'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'bg_color': red, 'font_color': 'white', 'border': 1, 'num_format': '0.00%', 'font_name': 'Times New Roman'})
+
+    spv_merge_format = workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'bold': True, 'font_name': 'Times New Roman'})
+    data_format = workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'font_name': 'Times New Roman'})
+    data_num_format = workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'num_format': '#,##0', 'font_name': 'Times New Roman'})
+    data_pct_format = workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'num_format': '0.00%', 'font_name': 'Times New Roman'})
+
+    worksheet.set_column('A:A', 14); worksheet.set_column('B:B', 16); worksheet.set_column('C:C', 30); worksheet.set_column('D:D', 42)
+    worksheet.set_column('E:E', 18); worksheet.set_column('F:F', 20); worksheet.set_column('G:G', 22); worksheet.set_column('H:H', 20); worksheet.set_column('I:I', 15)
+
+    worksheet.merge_range('A1:I1', 'AliExpress 拜访率 % Visitas AliExpress', title_format)
+    worksheet.set_row(0, 36)
+    worksheet.merge_range('A2:I2', subtitle_str, subtitle_format)
+    worksheet.set_row(1, 24)
+
+    headers = ['SPV', 'ZONA', '客户归属网点\nPDV', 'SELLER', '待收取总数\nTOTAL a\nRecolectar', '已记录拜访 VISITA\nREGISTRADA', '异常扫描已记录\nABNORMAL SCAN', '待收取包裹数\nPOR\nRECOLECTAR', '商家拜访率\nRATE %']
+    for col, h in enumerate(headers): worksheet.write(2, col, h, header_format)
+    worksheet.set_row(2, 48)
+
+    gt_total = int(df_report['Total'].sum())
+    gt_abnormal = int(df_report['Abnormal'].sum())
+    gt_porrec = int(df_report['PorRec'].sum())
+    gt_visita_column = int(df_report['Visita'].sum()) + gt_abnormal
+    gt_rate = gt_visita_column / gt_total if gt_total > 0 else 0.0
+
+    worksheet.merge_range('A4:D4', 'GRAND TOTAL 总计', grand_total_label)
+    worksheet.write(3, 4, gt_total, grand_total_num)
+    worksheet.write(3, 5, gt_visita_column, grand_total_num)
+    worksheet.write(3, 6, gt_abnormal, grand_total_num)
+    worksheet.write(3, 7, gt_porrec, grand_total_num)
+    worksheet.write(3, 8, float(gt_rate), grand_total_pct)
+    worksheet.set_row(3, 26)
+
+    current_row = 4
+    for spv_name, group in df_report.groupby('SPV', sort=False):
+        start_row = current_row
+        for _, row in group.iterrows():
+            worksheet.write(current_row, 1, row['ZONA'], data_format)
+            worksheet.write(current_row, 2, row['PDV'], data_format)
+            worksheet.write(current_row, 3, row['SELLER'], data_format)
+            worksheet.write(current_row, 4, int(row['Total']), data_num_format)
+            worksheet.write(current_row, 5, int(row['Visita']), data_num_format)
+            worksheet.write(current_row, 6, row['Abnormal_View'], data_num_format)
+            worksheet.write(current_row, 7, row['PorRec_View'], data_num_format)
+            worksheet.write(current_row, 8, float(row['Rate']), data_pct_format)
+            current_row += 1
+
+        if current_row - 1 > start_row: worksheet.merge_range(start_row, 0, current_row - 1, 0, spv_name, spv_merge_format)
+        else: worksheet.write(start_row, 0, spv_name, spv_merge_format)
+
+        sub_total, sub_visita, sub_abnormal, sub_porrec = int(group['Total'].sum()), int(group['Visita'].sum()), int(group['Abnormal'].sum()), int(group['PorRec'].sum())
+        sub_rate = (sub_visita + sub_abnormal) / sub_total if sub_total > 0 else 0.0
+
+        worksheet.merge_range(f'A{current_row+1}:D{current_row+1}', f'TOTAL {spv_name}', subtotal_label_yellow)
+        worksheet.write(current_row, 4, sub_total, subtotal_num_yellow)
+        worksheet.write(current_row, 5, sub_visita, subtotal_num_yellow)
+        worksheet.write(current_row, 6, sub_abnormal, subtotal_num_yellow)
+        worksheet.write(current_row, 7, sub_porrec, subtotal_num_red)
+        worksheet.write(current_row, 8, float(sub_rate), subtotal_pct_red)
+
+        worksheet.set_row(current_row, 24)
+        current_row += 1
+
+    df_raw_original.to_excel(writer, sheet_name=original_sheet_name, index=False)
+    writer.close()
+    
+    return output.getvalue(), output_filename
+
 
 def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     # 1. LOAD STATIC MAPPING
@@ -187,6 +368,7 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     output = io.BytesIO()
     wb.save(output)
     return output.getvalue(), output_filename
+
 
 def generate_r5_metropolitan(raw_file_bytes, spv_file_bytes):
     # 1. LOAD STATIC MAPPING
@@ -336,6 +518,7 @@ def generate_r5_metropolitan(raw_file_bytes, spv_file_bytes):
     writer.close()
     return output.getvalue(), output_filename
 
+
 def generate_anomalies(raw_file_bytes, spv_file_bytes):
     # 1. LOAD STATIC MAPPING
     df_spv = pd.read_excel(io.BytesIO(spv_file_bytes))
@@ -479,6 +662,7 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes):
     wb.save(output)
     return output.getvalue(), output_filename
 
+
 # ==============================================================================
 # MAIN WEB UI
 # ==============================================================================
@@ -505,7 +689,7 @@ if check_password():
     # 1. Report Selection
     report_type = st.selectbox(
         "Select the report you want to generate:",
-        ("MISSING SCAN", "R5 METROPOLITAN", "ANOMALIES (问题件跟进)")
+        ("MISSING SCAN", "R5 METROPOLITAN", "ANOMALIES (问题件跟进)", "ALIEXPRESS")
     )
     
     # 2. Single Daily File Uploader
@@ -525,6 +709,8 @@ if check_password():
                         processed_file, filename = generate_r5_metropolitan(raw_data.getvalue(), spv_file_bytes)
                     elif report_type == "ANOMALIES (问题件跟进)":
                         processed_file, filename = generate_anomalies(raw_data.getvalue(), spv_file_bytes)
+                    elif report_type == "ALIEXPRESS":
+                        processed_file, filename = generate_aliexpress(raw_data.getvalue(), spv_file_bytes)
                     
                     st.success(f"✅ Your {report_type} report was generated successfully!")
                     
