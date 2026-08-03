@@ -266,7 +266,7 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
         final_df[col] = final_df[col].fillna(0)
 
     # Strict SPV Filter
-    valid_spvs = ['DIANA', 'LUCERO', 'SABINA']
+    valid_spvs = ['DIANA', 'SABINA']
     final_df['spv_upper'] = final_df['spv'].astype(str).str.strip().str.upper()
     final_df = final_df[final_df['spv_upper'].isin(valid_spvs)].copy()
 
@@ -379,7 +379,7 @@ def generate_r5_metropolitan(raw_file_bytes, spv_file_bytes):
     df_spv['PDV'] = df_spv['PDV'].astype(str).str.strip()
     df_spv['PDV_lower'] = df_spv['PDV'].str.lower()
     
-    valid_spvs = ['DIANA', 'LUCERO', 'SABINA']
+    valid_spvs = ['DIANA', 'SABINA']
     spv_map = df_spv[df_spv['SPV'].isin(valid_spvs)].drop_duplicates(subset=['PDV_lower']).copy()
 
     # 2. LOAD RAW DATA
@@ -528,7 +528,7 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes):
     df_spv['PDV'] = df_spv['PDV'].astype(str).str.strip()
     df_spv['PDV_lower'] = df_spv['PDV'].str.lower()
     
-    valid_spvs = ['DIANA', 'LUCERO', 'SABINA']
+    valid_spvs = ['DIANA', 'SABINA']
     spv_map = df_spv[df_spv['SPV'].isin(valid_spvs)].drop_duplicates(subset=['PDV_lower']).copy()
 
     # 2. LOAD RAW DATA
