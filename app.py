@@ -44,8 +44,245 @@ def check_password():
 
 
 # ==============================================================================
+# HELPER FUNCTIONS FOR TIKTOK
+# ==============================================================================
+def get_rounded_time_display():
+    """
+    Calculates time display according to the formula rule:
+    IF MINUTE <= 15 -> :00
+    IF MINUTE <= 45 -> :30
+    ELSE -> next hour :00
+    """
+    now = datetime.datetime.now()
+    minute = now.minute
+    if minute <= 15:
+        r_dt = now.replace(minute=0, second=0, microsecond=0)
+    elif minute <= 45:
+        r_dt = now.replace(minute=30, second=0, microsecond=0)
+    else:
+        r_dt = (now + datetime.timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+    
+    return r_dt.strftime("%I:%M %p").lstrip('0')
+
+def clean_spv_value(val):
+    """
+    Consolidates CEDIS, NaN, empty strings, and unmapped rows into #N/A
+    """
+    val_str = str(val).strip() if pd.notna(val) else '#N/A'
+    if val_str in ['CEDIS', 'nan', 'NaN', '', 'None', 'NoneType']:
+        return '#N/A'
+    return val_str
+
+
+# ==============================================================================
 # REPORT LOGIC WRAPPERS
 # ==============================================================================
+
+def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
+    # 1. SAFELY LOAD DATA INTO MEMORY
+    xls_raw = pd.ExcelFile(io.BytesIO(raw_file_bytes))
+    original_sheet_name = '订单综合信息' if '订单综合信息' in xls_raw.sheet_names else xls_raw.sheet_names[0]
+    df_raw = pd.read_excel(xls_raw, sheet_name=original_sheet_name)
+    
+    # Clean redundant calculated columns from previous runs if present in raw data sheet
+    for col in ['SPV', 'SLR']:
+        if col in df_raw.columns:
+            df_raw = df_raw.drop(columns=[col])
+            
+    df_raw_copy = df_raw.copy()  # Preserve original raw data to write back
+    
+    # Load supervisor mapping file
+    df_sup = pd.read_excel(io.BytesIO(spv_file_bytes))
+    df_sup.columns = df_sup.columns.astype(str).str.strip()
+    if 'PDV' in df_sup.columns:
+        df_sup['PDV'] = df_sup['PDV'].astype(str).str.strip()
+        
+    if 'Punto de Recogida' in df_raw.columns:
+        df_raw['Punto de Recogida'] = df_raw['Punto de Recogida'].astype(str).str.strip()
+
+    # 2. AUTOMATIC TARGET HOUR DETECTION FROM 'TABLA' SHEET
+    try:
+        df_tabla = pd.read_excel(xls_raw, sheet_name='TABLA')
+        existing_cols = [str(c).strip() for c in df_tabla.columns]
+        
+        if '9' not in existing_cols: target_hour = 9
+        elif '12' not in existing_cols: target_hour = 12
+        elif '3' not in existing_cols: target_hour = 3
+        else: target_hour = 5
+    except Exception:
+        df_tabla = pd.DataFrame()
+        target_hour = 9
+
+    # 3. DYNAMIC DATE EXTRACTION
+    months_en = {1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun', 
+                 7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'}
+    
+    report_date_str = ""
+    if 'Tiempo de registro de la orden' in df_raw.columns:
+        dates = pd.to_datetime(df_raw['Tiempo de registro de la orden']).dt.date
+        o_date = dates.value_counts().idxmax()
+        report_date_str = f"{o_date.day:02d}-{months_en[o_date.month]}"
+    else:
+        report_date_str = "N/A"
+
+    # 4. DATA CLEANING & MERGING
+    df_raw['SLR'] = df_raw['Compañía remitente'].astype(str).apply(
+        lambda x: x.split('|')[-1].strip() if '|' in x else x.strip()
+    )
+    
+    df_raw = pd.merge(df_raw, df_sup[['PDV', 'SUPERVISOR']], left_on='Punto de Recogida', right_on='PDV', how='left')
+    df_raw.rename(columns={'SUPERVISOR': 'SPV'}, inplace=True)
+    
+    # Explicitly consolidate CEDIS / NaNs / Empty into '#N/A'
+    df_raw['SPV'] = df_raw['SPV'].apply(clean_spv_value)
+    
+    if 'Estado de la orden' in df_raw.columns:
+        df_valid = df_raw[df_raw['Estado de la orden'].astype(str).str.upper() != 'CANCELADO']
+    else:
+        df_valid = df_raw.copy()
+
+    # 5. TIME LOGIC & PIVOTS
+    time_col = str(target_hour)
+    df_current_counts = df_valid.groupby('SLR')['Guía de Rastreo'].count().reset_index(name=time_col)
+
+    if target_hour == 9:
+        df_mapping = df_valid[['SLR', 'Punto de Recogida', 'SPV']].drop_duplicates(subset=['SLR'])
+        df_mapping.rename(columns={'Punto de Recogida': 'PDV'}, inplace=True)
+        
+        df_tabla = pd.merge(df_mapping, df_current_counts, on='SLR', how='left')
+        df_tabla[time_col] = df_tabla[time_col].fillna(0).astype(int)
+        df_tabla['SPV'] = df_tabla['SPV'].apply(clean_spv_value)
+        
+        df_template_source = df_tabla.copy()
+        vol_col = time_col
+    else:
+        df_tabla.columns = [str(c).strip() for c in df_tabla.columns]
+        if time_col in df_tabla.columns: df_tabla.drop(columns=[time_col], inplace=True)
+        if 'FORMULA' in df_tabla.columns: df_tabla.drop(columns=['FORMULA'], inplace=True)
+
+        df_tabla = pd.merge(df_tabla, df_current_counts, on='SLR', how='left')
+        df_tabla[time_col] = df_tabla[time_col].fillna(0).astype(int)
+        df_tabla['SPV'] = df_tabla['SPV'].apply(clean_spv_value)
+        
+        if '9' in df_tabla.columns:
+            df_tabla['FORMULA'] = df_tabla['9'].fillna(0).astype(int) - df_tabla[time_col]
+        else:
+            raise ValueError("Error: Columna '9' no encontrada en la hoja TABLA. Procesa primero las 9 AM.")
+            
+        df_template_source = df_tabla[df_tabla['FORMULA'] == 0].copy()
+        vol_col = time_col
+
+    # 6. TEMPLATE GENERATION WITH CUSTOM SORTING (#N/A AT THE VERY END)
+    unique_spvs = [s for s in df_template_source['SPV'].unique() if str(s).strip() != '#N/A']
+    unique_spvs.sort()
+    if '#N/A' in df_template_source['SPV'].unique() or '#N/A' in df_tabla['SPV'].unique():
+        unique_spvs.append('#N/A')
+
+    template_data = []
+    for spv in unique_spvs:
+        group = df_template_source[df_template_source['SPV'] == spv]
+        template_data.append({
+            'SUPERVISOR': spv,
+            'TOTAL TT SELLERS': len(group),
+            '1-10': len(group[(group[vol_col] >= 1) & (group[vol_col] <= 10)]),
+            '11-50': len(group[(group[vol_col] >= 11) & (group[vol_col] <= 50)]),
+            '+50': len(group[group[vol_col] > 50])
+        })
+        
+    df_template = pd.DataFrame(template_data)
+    
+    total_row = {
+        'SUPERVISOR': 'TOTAL',
+        'TOTAL TT SELLERS': df_template['TOTAL TT SELLERS'].sum() if not df_template.empty else 0,
+        '1-10': df_template['1-10'].sum() if not df_template.empty else 0,
+        '11-50': df_template['11-50'].sum() if not df_template.empty else 0,
+        '+50': df_template['+50'].sum() if not df_template.empty else 0
+    }
+    df_template = pd.concat([df_template, pd.DataFrame([total_row])], ignore_index=True)
+
+    # 7. EXCEL OUTPUT GENERATION
+    output_buffer = io.BytesIO()
+
+    with pd.ExcelWriter(output_buffer, engine='xlsxwriter', engine_kwargs={'options': {'nan_inf_to_errors': True}}) as writer:
+        workbook = writer.book
+        
+        # --- Sheet 1: VISITAS ---
+        sheet_name = 'VISITAS'
+        worksheet = workbook.add_worksheet(sheet_name)
+        worksheet.hide_gridlines(0)
+        
+        font_family = 'Times New Roman'
+        
+        blue_bg = workbook.add_format({'bg_color': '#5B9BD5', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 11})
+        purple_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'text_wrap': True, 'font_name': font_family, 'font_size': 11})
+        red_bg = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 11})
+        yellow_bg = workbook.add_format({'bg_color': '#FFFF00', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 11})
+        
+        title_fmt = workbook.add_format({'bold': True, 'font_size': 13, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family})
+        sub_title_fmt = workbook.add_format({'bold': True, 'font_size': 11, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family})
+        time_badge_fmt = workbook.add_format({'bg_color': '#FFFF00', 'bold': True, 'italic': True, 'align': 'center', 'valign': 'vcenter', 'font_size': 12, 'font_name': font_family, 'border': 1})
+        
+        data_fmt = workbook.add_format({'border': 1, 'align': 'left', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
+        data_num_fmt = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
+        
+        worksheet.set_column('A:A', 52)
+        worksheet.set_column('B:E', 22)
+
+        worksheet.merge_range('B1:D1', 'TT SELLERS TO VISIT BASED ON THE # OF PACKAGES', title_fmt)
+        worksheet.merge_range('B2:D2', '按包裹数量需拜访的TT卖家', sub_title_fmt)
+        
+        formatted_time = get_rounded_time_display()
+        worksheet.merge_range('E1:E2', formatted_time, time_badge_fmt)
+        worksheet.set_row(0, 22)
+        worksheet.set_row(1, 22)
+        
+        worksheet.write(2, 0, 'SUPERVISOR', blue_bg)
+        worksheet.write(2, 1, 'TOTAL TT SELLERS', purple_bg)
+        worksheet.write(2, 2, '1-10', red_bg)
+        worksheet.write(2, 3, '11-50', red_bg)
+        worksheet.write(2, 4, '+50', red_bg)
+        worksheet.set_row(2, 28)
+        
+        worksheet.write(3, 0, '', purple_bg)
+        worksheet.merge_range(3, 1, 3, 4, report_date_str, purple_bg)
+        worksheet.set_row(3, 22)
+        
+        current_row = 4
+        for _, row in df_template.iterrows():
+            is_total_row = (row['SUPERVISOR'] == 'TOTAL')
+            row_format = yellow_bg if is_total_row else data_num_fmt
+            str_format = yellow_bg if is_total_row else data_fmt
+            
+            worksheet.write(current_row, 0, str(row['SUPERVISOR']), str_format)
+            worksheet.write(current_row, 1, int(row['TOTAL TT SELLERS']), row_format)
+            worksheet.write(current_row, 2, int(row['1-10']), row_format)
+            worksheet.write(current_row, 3, int(row['11-50']), row_format)
+            worksheet.write(current_row, 4, int(row['+50']), row_format)
+            worksheet.set_row(current_row, 20)
+            current_row += 1
+
+        # --- Sheet 2: TABLA ---
+        df_tabla.to_excel(writer, sheet_name='TABLA', index=False)
+        worksheet_tabla = writer.sheets['TABLA']
+        worksheet_tabla.hide_gridlines(0)
+        
+        tabla_header = workbook.add_format({'bold': True, 'bg_color': '#D9E1F2', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family})
+        tabla_data = workbook.add_format({'border': 1, 'valign': 'vcenter', 'font_name': font_family})
+        
+        for col_num, value in enumerate(df_tabla.columns):
+            worksheet_tabla.write(0, col_num, value, tabla_header)
+            max_len = max(df_tabla[value].astype(str).map(len).max(), len(str(value))) + 4
+            worksheet_tabla.set_column(col_num, col_num, max(max_len, 14), tabla_data)
+        worksheet_tabla.set_row(0, 24)
+
+        # --- Sheet 3: ORIGINAL RAW DATA ---
+        df_raw_copy.to_excel(writer, sheet_name=original_sheet_name, index=False)
+        worksheet_raw = writer.sheets[original_sheet_name]
+        worksheet_raw.hide_gridlines(0)
+
+    output_filename = "TIKTOK PENDING FROM YESTERDAY.xlsx"
+    return output_buffer.getvalue(), output_filename
+
 
 def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     df_spv = pd.read_excel(io.BytesIO(spv_file_bytes))
@@ -146,7 +383,6 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     base_font = 'Calibri'
     base_size = 14
 
-    # TITLE SIZE UPDATED TO 36
     title_format = workbook.add_format({'bold': True, 'font_size': 36, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': base_font})
     subtitle_format = workbook.add_format({'bold': False, 'font_size': 15, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': base_font})
     header_format = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
@@ -169,7 +405,7 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     worksheet.set_column('E:I', 24)
 
     worksheet.merge_range('A1:I1', 'AliExpress 拜访率 % Visitas AliExpress', title_format)
-    worksheet.set_row(0, 70)  # ADJUSTED ROW HEIGHT
+    worksheet.set_row(0, 70) 
     worksheet.merge_range('A2:I2', subtitle_str, subtitle_format)
     worksheet.set_row(1, 28)
 
@@ -297,7 +533,6 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
         del wb['Report']
     ws = wb.create_sheet(title='Report', index=0)
 
-    # TITLE SIZE UPDATED TO 36
     font_title = Font(name='Calibri', size=36, bold=True, color='FFFFFF')
     font_white_bold = Font(name='Calibri', size=14, bold=True, color='FFFFFF')
     font_black_bold = Font(name='Calibri', size=14, bold=True, color='000000')
@@ -323,7 +558,7 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     cell_title.font = font_title
     cell_title.fill = fill_black
     cell_title.alignment = align_center
-    ws.row_dimensions[1].height = 85  # ADJUSTED ROW HEIGHT FOR 36PT MULTILINE TEXT
+    ws.row_dimensions[1].height = 85
 
     headers = ['负责人\nSPV', '区域\nZONA', '揽收网点\nPDV', '总扫描数据量\nTOTAL A', '未进行入库扫描包裹件数\nSIN ESCANEO DE', '未进行入库扫描包裹的百分比\n% SIN ESCANEO DE', '未进行出库扫描的包裹\nSIN ESCANEO DE', '未进行出库扫描包裹的百分比\n% SIN ESCANEO DE']
     for col_num, h_text in enumerate(headers, 1):
@@ -499,7 +734,6 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     base_font = 'Calibri'
     base_size = 14
     
-    # TITLE SIZE UPDATED TO 36
     t_fmt = wb.add_format({'bold': True, 'font_size': 36, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font})
     s_fmt = wb.add_format({'bold': False, 'font_size': 15, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font})
     h_fmt = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
@@ -518,7 +752,7 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
 
     ws.set_column('A:A', 18); ws.set_column('B:B', 20); ws.set_column('C:C', 34); ws.set_column('D:F', 24); ws.set_column('G:G', 22)
     ws.merge_range('A1:G1', 'R7 CDMX 所有平台的揽收率', t_fmt)
-    ws.set_row(0, 70)  # ADJUSTED ROW HEIGHT
+    ws.set_row(0, 70) 
     ws.merge_range('A2:G2', subtitle_str, s_fmt)
     ws.set_row(1, 28)
 
@@ -665,7 +899,7 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
 
     ws.merge_cells('A1:G1')
     ws['A1'].value, ws['A1'].font, ws['A1'].fill, ws['A1'].alignment = '问题件跟进 Seguimiento Paquetes de Anomalia', Font(name='Calibri', size=36, bold=True, color='FFFFFF'), fil_main, a_c
-    ws.row_dimensions[1].height = 70  # ADJUSTED ROW HEIGHT FOR 36PT
+    ws.row_dimensions[1].height = 70 
 
     ws.merge_cells('A2:G2')
     ws['A2'].value, ws['A2'].font, ws['A2'].fill, ws['A2'].alignment = subtitle_str, Font(name='Calibri', size=15, bold=False, color='FFFFFF'), fil_main, a_c
@@ -770,7 +1004,7 @@ if check_password():
 
     report_type = st.selectbox(
         "Select the report you want to generate:",
-        ("MISSING SCAN", "R7 CDMX", "ANOMALIES (问题件跟进)", "ALIEXPRESS")
+        ("MISSING SCAN", "R7 CDMX", "ANOMALIES (问题件跟进)", "ALIEXPRESS", "TIKTOK PENDING VISITS")
     )
     
     raw_data = st.file_uploader("📥 Upload Daily Raw Data (.xlsx, .csv)", type=["xlsx", "csv"])
@@ -789,6 +1023,8 @@ if check_password():
                         processed_file, filename = generate_anomalies(raw_data.getvalue(), spv_file_bytes, raw_data.name)
                     elif report_type == "ALIEXPRESS":
                         processed_file, filename = generate_aliexpress(raw_data.getvalue(), spv_file_bytes)
+                    elif report_type == "TIKTOK PENDING VISITS":
+                        processed_file, filename = generate_tiktok_visits(raw_data.getvalue(), spv_file_bytes)
                     
                     st.success(f"✅ Your {report_type} report was generated successfully!")
                     
