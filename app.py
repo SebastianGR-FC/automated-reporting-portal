@@ -48,12 +48,13 @@ def check_password():
 # ==============================================================================
 def get_rounded_time_display():
     """
-    Calculates time display according to the formula rule:
+    Calculates time display in CDMX Timezone (UTC-6) according to rounding rules:
     IF MINUTE <= 15 -> :00
     IF MINUTE <= 45 -> :30
     ELSE -> next hour :00
     """
-    now = datetime.datetime.now()
+    cdmx_tz = datetime.timezone(datetime.timedelta(hours=-6))
+    now = datetime.datetime.now(cdmx_tz)
     minute = now.minute
     if minute <= 15:
         r_dt = now.replace(minute=0, second=0, microsecond=0)
@@ -181,15 +182,29 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         if 'FORMULA' in df_tabla.columns: df_tabla.drop(columns=['FORMULA'], inplace=True)
 
         df_tabla = pd.merge(df_tabla, df_current_counts, on='SLR', how='left')
-        df_tabla[time_col] = df_tabla[time_col].fillna(0).astype(int)
         df_tabla['SPV'] = df_tabla['SPV'].apply(clean_spv_value)
         
+        # 0s in time slots 12, 3, 5 mean all packages collected -> converted to '#N/A'
+        df_tabla[time_col] = df_tabla[time_col].apply(lambda x: '#N/A' if pd.isna(x) or x == 0 else int(x))
+        
         if '9' in df_tabla.columns:
-            df_tabla['FORMULA'] = df_tabla['9'].fillna(0).astype(int) - df_tabla[time_col]
+            def calculate_formula(row):
+                val_9 = row['9']
+                val_curr = row[time_col]
+                if str(val_curr) == '#N/A' or str(val_9) == '#N/A':
+                    return '#N/A'
+                try:
+                    diff = int(val_9) - int(val_curr)
+                    return diff
+                except Exception:
+                    return '#N/A'
+
+            df_tabla['FORMULA'] = df_tabla.apply(calculate_formula, axis=1)
         else:
             raise ValueError("Error: Columna '9' no encontrada en la hoja TABLA. Procesa primero las 9 AM.")
             
-        df_template_source = df_tabla[df_tabla['FORMULA'] == 0].copy()
+        # Filter for sellers where formula results in 0
+        df_template_source = df_tabla[df_tabla['FORMULA'].astype(str) == '0'].copy()
         vol_col = time_col
 
     # 6. TEMPLATE GENERATION WITH CUSTOM SORTING (#N/A AT THE VERY END)
@@ -201,12 +216,16 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
     template_data = []
     for spv in unique_spvs:
         group = df_template_source[df_template_source['SPV'] == spv]
+        
+        # Parse column value cleanly for numeric comparisons
+        group_vols = pd.to_numeric(group[vol_col], errors='coerce').fillna(0)
+        
         template_data.append({
             'SUPERVISOR': spv,
             'TOTAL TT SELLERS': len(group),
-            '1-10': len(group[(group[vol_col] >= 1) & (group[vol_col] <= 10)]),
-            '11-50': len(group[(group[vol_col] >= 11) & (group[vol_col] <= 50)]),
-            '+50': len(group[group[vol_col] > 50])
+            '1-10': len(group[(group_vols >= 1) & (group_vols <= 10)]),
+            '11-50': len(group[(group_vols >= 11) & (group_vols <= 50)]),
+            '+50': len(group[group_vols > 50])
         })
         
     df_template = pd.DataFrame(template_data)
