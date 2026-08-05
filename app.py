@@ -52,7 +52,6 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     df_spv.columns = df_spv.columns.astype(str).str.strip().str.lower()
     df_spv['pdv'] = df_spv['pdv'].astype(str).str.strip()
     
-    # DYNAMIC SPV EXTRACTION (Filter out CEDIS)
     valid_spvs = [str(spv).strip().upper() for spv in df_spv['spv'].dropna().unique() if 'CEDIS' not in str(spv).strip().upper()]
 
     try:
@@ -99,7 +98,6 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     df_report['PDV'] = df_report['PDV'].fillna('').astype(str)
     df_report['SELLER'] = df_report['SELLER'].fillna('').astype(str)
     
-    # APPLY DYNAMIC SPV FILTER
     df_report = df_report[df_report['SPV'].isin(valid_spvs)]
     df_report = df_report.sort_values(by=['SPV', 'ZONA', 'PDV', 'SELLER'], ascending=[True, True, True, True])
 
@@ -148,7 +146,8 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     base_font = 'Calibri'
     base_size = 14
 
-    title_format = workbook.add_format({'bold': True, 'font_size': 22, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': base_font})
+    # TITLE SIZE UPDATED TO 36
+    title_format = workbook.add_format({'bold': True, 'font_size': 36, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': base_font})
     subtitle_format = workbook.add_format({'bold': False, 'font_size': 15, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': base_font})
     header_format = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
 
@@ -170,7 +169,7 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     worksheet.set_column('E:I', 24)
 
     worksheet.merge_range('A1:I1', 'AliExpress 拜访率 % Visitas AliExpress', title_format)
-    worksheet.set_row(0, 45)
+    worksheet.set_row(0, 70)  # ADJUSTED ROW HEIGHT
     worksheet.merge_range('A2:I2', subtitle_str, subtitle_format)
     worksheet.set_row(1, 28)
 
@@ -253,7 +252,6 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     df_spv_static = pd.read_excel(io.BytesIO(spv_file_bytes))
     df_spv_static.columns = df_spv_static.columns.str.strip()
 
-    # DYNAMIC SPV EXTRACTION (Filter out CEDIS)
     valid_spvs = [str(spv).strip().upper() for spv in df_spv_static['SPV'].dropna().unique() if 'CEDIS' not in str(spv).strip().upper()]
 
     spv_map = df_spv_static[['SPV', 'ZONA', 'PDV']].dropna(subset=['PDV']).copy()
@@ -286,7 +284,6 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     for col in val_cols:
         final_df[col] = final_df[col].fillna(0)
 
-    # APPLY DYNAMIC SPV FILTER
     final_df['spv_upper'] = final_df['spv'].astype(str).str.strip().str.upper()
     final_df = final_df[final_df['spv_upper'].isin(valid_spvs)].copy()
 
@@ -300,7 +297,8 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
         del wb['Report']
     ws = wb.create_sheet(title='Report', index=0)
 
-    font_title = Font(name='Calibri', size=22, bold=True, color='FFFFFF')
+    # TITLE SIZE UPDATED TO 36
+    font_title = Font(name='Calibri', size=36, bold=True, color='FFFFFF')
     font_white_bold = Font(name='Calibri', size=14, bold=True, color='FFFFFF')
     font_black_bold = Font(name='Calibri', size=14, bold=True, color='000000')
     font_regular = Font(name='Calibri', size=14, bold=False, color='000000')
@@ -325,7 +323,7 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     cell_title.font = font_title
     cell_title.fill = fill_black
     cell_title.alignment = align_center
-    ws.row_dimensions[1].height = 65
+    ws.row_dimensions[1].height = 85  # ADJUSTED ROW HEIGHT FOR 36PT MULTILINE TEXT
 
     headers = ['负责人\nSPV', '区域\nZONA', '揽收网点\nPDV', '总扫描数据量\nTOTAL A', '未进行入库扫描包裹件数\nSIN ESCANEO DE', '未进行入库扫描包裹的百分比\n% SIN ESCANEO DE', '未进行出库扫描的包裹\nSIN ESCANEO DE', '未进行出库扫描包裹的百分比\n% SIN ESCANEO DE']
     for col_num, h_text in enumerate(headers, 1):
@@ -420,7 +418,6 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     df_spv['PDV'] = df_spv['PDV'].astype(str).str.strip()
     df_spv['PDV_lower'] = df_spv['PDV'].str.lower()
     
-    # DYNAMIC SPV EXTRACTION (Filter out CEDIS)
     valid_spvs = [str(spv).strip().upper() for spv in df_spv['SPV'].dropna().unique() if 'CEDIS' not in str(spv).strip().upper()]
     spv_map = df_spv[df_spv['SPV'].isin(valid_spvs)].drop_duplicates(subset=['PDV_lower']).copy()
 
@@ -502,7 +499,8 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     base_font = 'Calibri'
     base_size = 14
     
-    t_fmt = wb.add_format({'bold': True, 'font_size': 22, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font})
+    # TITLE SIZE UPDATED TO 36
+    t_fmt = wb.add_format({'bold': True, 'font_size': 36, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font})
     s_fmt = wb.add_format({'bold': False, 'font_size': 15, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font})
     h_fmt = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
     
@@ -520,7 +518,7 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
 
     ws.set_column('A:A', 18); ws.set_column('B:B', 20); ws.set_column('C:C', 34); ws.set_column('D:F', 24); ws.set_column('G:G', 22)
     ws.merge_range('A1:G1', 'R7 CDMX 所有平台的揽收率', t_fmt)
-    ws.set_row(0, 45)
+    ws.set_row(0, 70)  # ADJUSTED ROW HEIGHT
     ws.merge_range('A2:G2', subtitle_str, s_fmt)
     ws.set_row(1, 28)
 
@@ -592,7 +590,6 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
     df_spv['PDV'] = df_spv['PDV'].astype(str).str.strip()
     df_spv['PDV_lower'] = df_spv['PDV'].str.lower()
     
-    # DYNAMIC SPV EXTRACTION (Filter out CEDIS)
     valid_spvs = [str(spv).strip().upper() for spv in df_spv['SPV'].dropna().unique() if 'CEDIS' not in str(spv).strip().upper()]
     spv_map = df_spv[df_spv['SPV'].isin(valid_spvs)].drop_duplicates(subset=['PDV_lower']).copy()
 
@@ -667,8 +664,8 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
     for col, width in c_w.items(): ws.column_dimensions[col].width = width
 
     ws.merge_cells('A1:G1')
-    ws['A1'].value, ws['A1'].font, ws['A1'].fill, ws['A1'].alignment = '问题件跟进 Seguimiento Paquetes de Anomalia', Font(name='Calibri', size=22, bold=True, color='FFFFFF'), fil_main, a_c
-    ws.row_dimensions[1].height = 45
+    ws['A1'].value, ws['A1'].font, ws['A1'].fill, ws['A1'].alignment = '问题件跟进 Seguimiento Paquetes de Anomalia', Font(name='Calibri', size=36, bold=True, color='FFFFFF'), fil_main, a_c
+    ws.row_dimensions[1].height = 70  # ADJUSTED ROW HEIGHT FOR 36PT
 
     ws.merge_cells('A2:G2')
     ws['A2'].value, ws['A2'].font, ws['A2'].fill, ws['A2'].alignment = subtitle_str, Font(name='Calibri', size=15, bold=False, color='FFFFFF'), fil_main, a_c
