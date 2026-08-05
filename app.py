@@ -93,10 +93,30 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
     
     # Load supervisor mapping file
     df_sup = pd.read_excel(io.BytesIO(spv_file_bytes))
-    df_sup.columns = df_sup.columns.astype(str).str.strip()
-    if 'PDV' in df_sup.columns:
-        df_sup['PDV'] = df_sup['PDV'].astype(str).str.strip()
+    df_sup.columns = [str(c).strip() for c in df_sup.columns]
+    
+    # Dynamically locate supervisor column name (handles SPV, SUPERVISOR, spv, etc.)
+    sup_col_found = None
+    for candidate in df_sup.columns:
+        if candidate.upper() in ['SUPERVISOR', 'SPV']:
+            sup_col_found = candidate
+            break
+            
+    if not sup_col_found:
+        raise KeyError(f"Could not find a supervisor column ('SUPERVISOR' or 'SPV') in SUPERVISORES VISITAS.xlsx. Columns found: {list(df_sup.columns)}")
         
+    df_sup.rename(columns={sup_col_found: 'SUPERVISOR'}, inplace=True)
+
+    # Dynamically locate PDV column name
+    pdv_col_found = None
+    for candidate in df_sup.columns:
+        if candidate.upper() == 'PDV':
+            pdv_col_found = candidate
+            break
+            
+    if pdv_col_found:
+        df_sup['PDV'] = df_sup[pdv_col_found].astype(str).str.strip()
+    
     if 'Punto de Recogida' in df_raw.columns:
         df_raw['Punto de Recogida'] = df_raw['Punto de Recogida'].astype(str).str.strip()
 
@@ -486,11 +506,12 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
 
 def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     df_spv_static = pd.read_excel(io.BytesIO(spv_file_bytes))
-    df_spv_static.columns = df_spv_static.columns.str.strip()
+    df_spv_static.columns = [str(c).strip() for c in df_spv_static.columns]
 
-    valid_spvs = [str(spv).strip().upper() for spv in df_spv_static['SPV'].dropna().unique() if 'CEDIS' not in str(spv).strip().upper()]
+    spv_col = 'SPV' if 'SPV' in df_spv_static.columns else 'SUPERVISOR'
+    valid_spvs = [str(spv).strip().upper() for spv in df_spv_static[spv_col].dropna().unique() if 'CEDIS' not in str(spv).strip().upper()]
 
-    spv_map = df_spv_static[['SPV', 'ZONA', 'PDV']].dropna(subset=['PDV']).copy()
+    spv_map = df_spv_static[[spv_col, 'ZONA', 'PDV']].dropna(subset=['PDV']).copy()
     spv_map.columns = ['spv', 'zona', 'pdv']
     spv_map['spv'] = spv_map['spv'].astype(str).str.strip()
     spv_map['zona'] = spv_map['zona'].astype(str).str.strip().replace('nan', 'N/A')
@@ -647,8 +668,10 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
 
 def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     df_spv = pd.read_excel(io.BytesIO(spv_file_bytes))
-    df_spv.columns = df_spv.columns.astype(str).str.strip()
-    df_spv['SPV'] = df_spv['SPV'].astype(str).str.strip().str.upper()
+    df_spv.columns = [str(c).strip() for c in df_spv.columns]
+    spv_col = 'SPV' if 'SPV' in df_spv.columns else 'SUPERVISOR'
+    
+    df_spv['SPV'] = df_spv[spv_col].astype(str).str.strip().str.upper()
     df_spv['ZONA'] = df_spv['ZONA'].astype(str).str.strip()
     df_spv['PDV'] = df_spv['PDV'].astype(str).str.strip()
     df_spv['PDV_lower'] = df_spv['PDV'].str.lower()
@@ -818,8 +841,10 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
 
 def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
     df_spv = pd.read_excel(io.BytesIO(spv_file_bytes))
-    df_spv.columns = df_spv.columns.astype(str).str.strip()
-    df_spv['SPV'] = df_spv['SPV'].astype(str).str.strip().str.upper()
+    df_spv.columns = [str(c).strip() for c in df_spv.columns]
+    spv_col = 'SPV' if 'SPV' in df_spv.columns else 'SUPERVISOR'
+
+    df_spv['SPV'] = df_spv[spv_col].astype(str).str.strip().str.upper()
     df_spv['ZONA'] = df_spv['ZONA'].astype(str).str.strip()
     df_spv['PDV'] = df_spv['PDV'].astype(str).str.strip()
     df_spv['PDV_lower'] = df_spv['PDV'].str.lower()
@@ -990,13 +1015,14 @@ if check_password():
     st.title("📊 Automated Reporting Portal")
     st.markdown("Upload your daily raw data below to instantly generate standardized Excel reports.")
     
+    # Strictly read SUPERVISORES VISITAS.xlsx
     try:
-        with open("SUPERVISORES.xlsx", "rb") as f:
+        with open("SUPERVISORES VISITAS.xlsx", "rb") as f:
             spv_file_bytes = f.read()
     except FileNotFoundError:
         st.error(
-            "🚨 **CRITICAL ERROR:** `SUPERVISORES.xlsx` was not found in the root directory. "
-            "Please make sure the file is saved in the same folder as `app.py` on the server."
+            "🚨 **CRITICAL ERROR:** `SUPERVISORES VISITAS.xlsx` was not found in the root directory. "
+            "Please make sure the file is saved in the repository on GitHub."
         )
         st.stop()
         
