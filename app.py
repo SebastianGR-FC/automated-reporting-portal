@@ -163,6 +163,10 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         df_valid = df_raw[~df_raw['Estado_upper'].isin(['CANCELADO', 'EN RECEPCIÓN', 'EN RECEPCION'])]
     else:
         df_valid = df_raw.copy()
+        
+    # Remove duplicate tracking numbers to prevent inflation of package counts
+    if 'Guía de Rastreo' in df_valid.columns:
+        df_valid = df_valid.drop_duplicates(subset=['Guía de Rastreo']).copy()
 
     # 5. TIME LOGIC & PIVOTS
     time_col = str(target_hour)
@@ -197,7 +201,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
                     return '#N/A'
                 try:
                     diff = int(val_9) - int(val_curr)
-                    return diff
+                    return max(0, diff) # Prevents negative numbers if sellers get more pending orders
                 except Exception:
                     return '#N/A'
 
