@@ -728,7 +728,7 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
         min_o, max_o = unique_dates[0], unique_dates
 [-1]
 
-        reco_date = max_o + datetime.timedelta(days=1)
+    reco_date = max_o + datetime.timedelta(days=1)
         if min_o == max_o:
             pedidos_es = f"{months_es[min_o.month]} {min_o.day}"
             pedidos_zh = f"{min_o.month}月{min_o.day}日"
