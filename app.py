@@ -51,6 +51,9 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     df_spv = pd.read_excel(io.BytesIO(spv_file_bytes))
     df_spv.columns = df_spv.columns.astype(str).str.strip().str.lower()
     df_spv['pdv'] = df_spv['pdv'].astype(str).str.strip()
+    
+    # DYNAMIC SPV EXTRACTION (Filter out CEDIS)
+    valid_spvs = [str(spv).strip().upper() for spv in df_spv['spv'].dropna().unique() if 'CEDIS' not in str(spv).strip().upper()]
 
     try:
         xls = pd.ExcelFile(io.BytesIO(raw_file_bytes))
@@ -95,6 +98,9 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     df_report['ZONA'] = df_report['ZONA'].fillna('').astype(str)
     df_report['PDV'] = df_report['PDV'].fillna('').astype(str)
     df_report['SELLER'] = df_report['SELLER'].fillna('').astype(str)
+    
+    # APPLY DYNAMIC SPV FILTER
+    df_report = df_report[df_report['SPV'].isin(valid_spvs)]
     df_report = df_report.sort_values(by=['SPV', 'ZONA', 'PDV', 'SELLER'], ascending=[True, True, True, True])
 
     df_report['Rate'] = np.where(df_report['Total'] > 0, (df_report['Visita'] + df_report['Abnormal']) / df_report['Total'], 0.0)
@@ -124,7 +130,6 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
 
     subtitle_str = f"订单日期：{o_date_zh}, 揽收日期 {r_date_zh} Pedidos: {o_date_es} | Reco: {r_date_es}"
 
-    # Set timezone strictly to Mexico City (UTC-6)
     mx_tz = datetime.timezone(datetime.timedelta(hours=-6))
     now = datetime.datetime.now(mx_tz)
     ts = now.timestamp()
@@ -139,7 +144,6 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     workbook = writer.book
     worksheet = workbook.add_worksheet('AliExpress')
 
-    # RESTORED COLORS & INCREASED FONTS
     magenta, yellow, red = '#B0005B', '#FFFF00', '#FF0000'
     base_font = 'Calibri'
     base_size = 14
@@ -249,6 +253,9 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     df_spv_static = pd.read_excel(io.BytesIO(spv_file_bytes))
     df_spv_static.columns = df_spv_static.columns.str.strip()
 
+    # DYNAMIC SPV EXTRACTION (Filter out CEDIS)
+    valid_spvs = [str(spv).strip().upper() for spv in df_spv_static['SPV'].dropna().unique() if 'CEDIS' not in str(spv).strip().upper()]
+
     spv_map = df_spv_static[['SPV', 'ZONA', 'PDV']].dropna(subset=['PDV']).copy()
     spv_map.columns = ['spv', 'zona', 'pdv']
     spv_map['spv'] = spv_map['spv'].astype(str).str.strip()
@@ -279,7 +286,7 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     for col in val_cols:
         final_df[col] = final_df[col].fillna(0)
 
-    valid_spvs = ['BONNIE', 'DIANA', 'LUCERO']
+    # APPLY DYNAMIC SPV FILTER
     final_df['spv_upper'] = final_df['spv'].astype(str).str.strip().str.upper()
     final_df = final_df[final_df['spv_upper'].isin(valid_spvs)].copy()
 
@@ -308,7 +315,6 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
     thin_border = Border(left=Side(style='thin', color='A6A6A6'), right=Side(style='thin', color='A6A6A6'), top=Side(style='thin', color='A6A6A6'), bottom=Side(style='thin', color='A6A6A6'))
 
-    # INCREASED SPACING FOR WRAPPED TEXT
     col_widths = {'A': 18, 'B': 22, 'C': 34, 'D': 30, 'E': 34, 'F': 34, 'G': 30, 'H': 34}
     for col_letter, width in col_widths.items():
         ws.column_dimensions[col_letter].width = width
@@ -414,7 +420,8 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     df_spv['PDV'] = df_spv['PDV'].astype(str).str.strip()
     df_spv['PDV_lower'] = df_spv['PDV'].str.lower()
     
-    valid_spvs = ['BONNIE', 'DIANA', 'LUCERO']
+    # DYNAMIC SPV EXTRACTION (Filter out CEDIS)
+    valid_spvs = [str(spv).strip().upper() for spv in df_spv['SPV'].dropna().unique() if 'CEDIS' not in str(spv).strip().upper()]
     spv_map = df_spv[df_spv['SPV'].isin(valid_spvs)].drop_duplicates(subset=['PDV_lower']).copy()
 
     df_raw = None
@@ -463,7 +470,6 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
 
     subtitle_str = f"订单日期: {pedidos_zh}, 揽收日期 {reco_zh} Pedidos: {pedidos_es} | Reco: {reco_es}"
     
-    # FIXED FILENAME
     output_filename = f"R7 CDMX {months_en[reco_date.month]} {reco_date.day}.xlsx"
 
     df_total = df_raw[~df_raw['Estado_lower'].str.contains('cancelad', na=False)].copy()
@@ -492,7 +498,6 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     wb = writer.book
     ws = wb.add_worksheet('R7 CDMX')
 
-    # RESTORED COLORS & INCREASED FONTS
     dark_purple, light_purple, yellow, red = '#2E003E', '#480060', '#FFFF00', '#990000'
     base_font = 'Calibri'
     base_size = 14
@@ -587,7 +592,8 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
     df_spv['PDV'] = df_spv['PDV'].astype(str).str.strip()
     df_spv['PDV_lower'] = df_spv['PDV'].str.lower()
     
-    valid_spvs = ['BONNIE', 'DIANA', 'LUCERO']
+    # DYNAMIC SPV EXTRACTION (Filter out CEDIS)
+    valid_spvs = [str(spv).strip().upper() for spv in df_spv['SPV'].dropna().unique() if 'CEDIS' not in str(spv).strip().upper()]
     spv_map = df_spv[df_spv['SPV'].isin(valid_spvs)].drop_duplicates(subset=['PDV_lower']).copy()
 
     xls = pd.ExcelFile(io.BytesIO(raw_file_bytes), engine='openpyxl')
