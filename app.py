@@ -134,7 +134,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         df_tabla = pd.DataFrame()
         target_hour = 9
 
-    # 3. DYNAMIC DATE EXTRACTION
+    # 3. DYNAMIC DATE EXTRACTION & FUNDAMENTAL LOGIC FIX
     months_en = {1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun', 
                  7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'}
     
@@ -143,6 +143,11 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         dates = pd.to_datetime(df_raw['Tiempo de registro de la orden']).dt.date
         o_date = dates.value_counts().idxmax()
         report_date_str = f"{o_date.day:02d}-{months_en[o_date.month]}"
+        
+        # FUNDAMENTAL LOGIC FIX: Filter dataset strictly to orders from the target date.
+        # This prevents new orders placed today from leaking into the dataset 
+        # and causing negative differences in the formula.
+        df_raw = df_raw[dates == o_date].copy()
     else:
         report_date_str = "N/A"
 
@@ -201,7 +206,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
                     return '#N/A'
                 try:
                     diff = int(val_9) - int(val_curr)
-                    return max(0, diff) # Prevents negative numbers if sellers get more pending orders
+                    return diff # Reverted to standard math; data filtering prevents negative values
                 except Exception:
                     return '#N/A'
 
