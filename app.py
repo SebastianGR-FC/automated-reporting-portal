@@ -157,8 +157,10 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
     # Explicitly consolidate CEDIS / NaNs / Empty into '#N/A'
     df_raw['SPV'] = df_raw['SPV'].apply(clean_spv_value)
     
+    # Filter out both "CANCELADO" and "EN RECEPCIÓN"
     if 'Estado de la orden' in df_raw.columns:
-        df_valid = df_raw[df_raw['Estado de la orden'].astype(str).str.upper() != 'CANCELADO']
+        df_raw['Estado_upper'] = df_raw['Estado de la orden'].astype(str).str.upper().str.strip()
+        df_valid = df_raw[~df_raw['Estado_upper'].isin(['CANCELADO', 'EN RECEPCIÓN', 'EN RECEPCION'])]
     else:
         df_valid = df_raw.copy()
 
@@ -206,6 +208,12 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         # Filter for sellers where formula results in 0
         df_template_source = df_tabla[df_tabla['FORMULA'].astype(str) == '0'].copy()
         vol_col = time_col
+
+    # REORDER TABLA COLUMNS: SPV -> PDV -> SLR -> hours (9, 12, 3, 5, FORMULA, etc.)
+    desired_order = ['SPV', 'PDV', 'SLR']
+    other_columns = [col for col in df_tabla.columns if col not in desired_order]
+    final_tabla_columns = [col for col in desired_order if col in df_tabla.columns] + other_columns
+    df_tabla = df_tabla[final_tabla_columns]
 
     # 6. TEMPLATE GENERATION WITH CUSTOM SORTING (#N/A AT THE VERY END)
     unique_spvs = [s for s in df_template_source['SPV'].unique() if str(s).strip() != '#N/A']
