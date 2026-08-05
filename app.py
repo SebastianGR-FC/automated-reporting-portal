@@ -148,7 +148,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
 
     # 4. DATA CLEANING & MERGING
     df_raw['SLR'] = df_raw['Compañía remitente'].astype(str).apply(
-        lambda x: x.split('|')[-1].strip() if '|' in x else x.strip()
+        lambda x: str(x).split('|')[-1].strip() if '|' in str(x) else str(x).strip()
     )
     
     df_raw = pd.merge(df_raw, df_sup[['PDV', 'SUPERVISOR']], left_on='Punto de Recogida', right_on='PDV', how='left')
@@ -318,7 +318,10 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         
         for col_num, value in enumerate(df_tabla.columns):
             worksheet_tabla.write(0, col_num, value, tabla_header)
-            max_len = max(df_tabla[value].astype(str).map(len).max(), len(str(value))) + 4
+            # Safely cast all values to string to avoid float length exceptions
+            val_lens = df_tabla[value].astype(str).str.len()
+            max_val_len = val_lens.max() if not val_lens.empty and pd.notna(val_lens.max()) else 0
+            max_len = max(max_val_len, len(str(value))) + 4
             worksheet_tabla.set_column(col_num, col_num, max(max_len, 14), tabla_data)
         worksheet_tabla.set_row(0, 24)
 
