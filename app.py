@@ -124,10 +124,12 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
 
     subtitle_str = f"订单日期：{o_date_zh}, 揽收日期 {r_date_zh} Pedidos: {o_date_es} | Reco: {r_date_es}"
 
-    now = datetime.datetime.now()
+    # Set timezone strictly to Mexico City (UTC-6)
+    mx_tz = datetime.timezone(datetime.timedelta(hours=-6))
+    now = datetime.datetime.now(mx_tz)
     ts = now.timestamp()
     ts_rounded = round(ts / 900) * 900
-    now_rounded = datetime.datetime.fromtimestamp(ts_rounded)
+    now_rounded = datetime.datetime.fromtimestamp(ts_rounded, mx_tz)
     time_str = f"{now_rounded.hour}" if now_rounded.minute == 0 else f"{now_rounded.hour}.{now_rounded.minute:02d}"
 
     output_filename = f"ALI {r_date_es.upper()} AT {time_str}.xlsx"
@@ -137,22 +139,23 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     workbook = writer.book
     worksheet = workbook.add_worksheet('AliExpress')
 
-    main_color, dark_grey, light_yellow = '#C00000', '#333333', '#FFFF00'
+    # RESTORED COLORS & INCREASED FONTS
+    magenta, yellow, red = '#B0005B', '#FFFF00', '#FF0000'
     base_font = 'Calibri'
     base_size = 14
 
-    title_format = workbook.add_format({'bold': True, 'font_size': 20, 'align': 'center', 'valign': 'vcenter', 'bg_color': main_color, 'font_color': 'white', 'font_name': base_font})
-    subtitle_format = workbook.add_format({'bold': False, 'font_size': 15, 'align': 'center', 'valign': 'vcenter', 'bg_color': main_color, 'font_color': 'white', 'font_name': base_font})
-    header_format = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_grey, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
+    title_format = workbook.add_format({'bold': True, 'font_size': 22, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': base_font})
+    subtitle_format = workbook.add_format({'bold': False, 'font_size': 15, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': base_font})
+    header_format = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
 
-    grand_total_label = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_grey, 'font_color': 'white', 'border': 1, 'font_name': base_font})
-    grand_total_num = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_grey, 'font_color': 'white', 'border': 1, 'num_format': '#,##0', 'font_name': base_font})
-    grand_total_pct = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': main_color, 'font_color': 'white', 'border': 1, 'num_format': '0.00%', 'font_name': base_font})
+    grand_total_label = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'border': 1, 'font_name': base_font})
+    grand_total_num = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'border': 1, 'num_format': '#,##0', 'font_name': base_font})
+    grand_total_pct = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': red, 'font_color': 'white', 'border': 1, 'num_format': '0.00%', 'font_name': base_font})
 
-    subtotal_label_yellow = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': light_yellow, 'font_color': 'black', 'border': 1, 'font_name': base_font})
-    subtotal_num_yellow = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': light_yellow, 'font_color': 'black', 'border': 1, 'num_format': '#,##0', 'font_name': base_font})
-    subtotal_pct_red = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': main_color, 'font_color': 'white', 'border': 1, 'num_format': '0.00%', 'font_name': base_font})
-    subtotal_num_red = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': main_color, 'font_color': 'white', 'border': 1, 'num_format': '#,##0', 'font_name': base_font})
+    subtotal_label_yellow = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': yellow, 'font_color': 'black', 'border': 1, 'font_name': base_font})
+    subtotal_num_yellow = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': yellow, 'font_color': 'black', 'border': 1, 'num_format': '#,##0', 'font_name': base_font})
+    subtotal_pct_red = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': red, 'font_color': 'white', 'border': 1, 'num_format': '0.00%', 'font_name': base_font})
+    subtotal_num_red = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': red, 'font_color': 'white', 'border': 1, 'num_format': '#,##0', 'font_name': base_font})
 
     spv_merge_format = workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'bold': True, 'font_size': base_size, 'font_name': base_font})
     data_format = workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'font_size': base_size, 'font_name': base_font})
@@ -163,7 +166,7 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     worksheet.set_column('E:I', 24)
 
     worksheet.merge_range('A1:I1', 'AliExpress 拜访率 % Visitas AliExpress', title_format)
-    worksheet.set_row(0, 40)
+    worksheet.set_row(0, 45)
     worksheet.merge_range('A2:I2', subtitle_str, subtitle_format)
     worksheet.set_row(1, 28)
 
@@ -290,8 +293,7 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
         del wb['Report']
     ws = wb.create_sheet(title='Report', index=0)
 
-    # UPDATED VISUAL STYLES
-    font_title = Font(name='Calibri', size=16, bold=True, color='FFFFFF')
+    font_title = Font(name='Calibri', size=22, bold=True, color='FFFFFF')
     font_white_bold = Font(name='Calibri', size=14, bold=True, color='FFFFFF')
     font_black_bold = Font(name='Calibri', size=14, bold=True, color='000000')
     font_regular = Font(name='Calibri', size=14, bold=False, color='000000')
@@ -306,7 +308,8 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
     thin_border = Border(left=Side(style='thin', color='A6A6A6'), right=Side(style='thin', color='A6A6A6'), top=Side(style='thin', color='A6A6A6'), bottom=Side(style='thin', color='A6A6A6'))
 
-    col_widths = {'A': 18, 'B': 22, 'C': 34, 'D': 24, 'E': 26, 'F': 26, 'G': 26, 'H': 26}
+    # INCREASED SPACING FOR WRAPPED TEXT
+    col_widths = {'A': 18, 'B': 22, 'C': 34, 'D': 30, 'E': 34, 'F': 34, 'G': 30, 'H': 34}
     for col_letter, width in col_widths.items():
         ws.column_dimensions[col_letter].width = width
 
@@ -316,7 +319,7 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     cell_title.font = font_title
     cell_title.fill = fill_black
     cell_title.alignment = align_center
-    ws.row_dimensions[1].height = 55
+    ws.row_dimensions[1].height = 65
 
     headers = ['负责人\nSPV', '区域\nZONA', '揽收网点\nPDV', '总扫描数据量\nTOTAL A', '未进行入库扫描包裹件数\nSIN ESCANEO DE', '未进行入库扫描包裹的百分比\n% SIN ESCANEO DE', '未进行出库扫描的包裹\nSIN ESCANEO DE', '未进行出库扫描包裹的百分比\n% SIN ESCANEO DE']
     for col_num, h_text in enumerate(headers, 1):
@@ -325,7 +328,7 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
         c.fill = fill_dark_grey
         c.alignment = align_center
         c.border = thin_border
-    ws.row_dimensions[2].height = 48
+    ws.row_dimensions[2].height = 65
 
     gt_total = final_df['El número de pedidos de escaneo'].sum()
     gt_rec = final_df['No. de escaneo faltante de recolección'].sum()
@@ -389,7 +392,6 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
         sub = ws.cell(row=current_row, column=1, value=f'TOTAL {spv_name}')
         sub.font, sub.fill, sub.alignment, sub.border = font_black_bold, fill_yellow, align_center, thin_border
         
-        # Apply borders to the merged cells so they render correctly
         ws.cell(row=current_row, column=2).border = thin_border
         ws.cell(row=current_row, column=3).border = thin_border
 
@@ -436,6 +438,7 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
 
     order_times = pd.to_datetime(df_raw['Tiempo de registro de la orden'], errors='coerce')
     unique_dates = sorted(order_times.dt.date.dropna().unique())
+    months_en = {1: 'JAN', 2: 'FEB', 3: 'MAR', 4: 'APR', 5: 'MAY', 6: 'JUN', 7: 'JUL', 8: 'AUG', 9: 'SEP', 10: 'OCT', 11: 'NOV', 12: 'DEC'}
     months_es = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
 
     if unique_dates:
@@ -459,7 +462,9 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
         reco_es, reco_zh = f"{months_es[reco_date.month]} {reco_date.day}", f"{reco_date.month}月{reco_date.day}日"
 
     subtitle_str = f"订单日期: {pedidos_zh}, 揽收日期 {reco_zh} Pedidos: {pedidos_es} | Reco: {reco_es}"
-    output_filename = f"R7 CDMX_{reco_date.strftime('%Y-%m-%d')}.xlsx"
+    
+    # FIXED FILENAME
+    output_filename = f"R7 CDMX {months_en[reco_date.month]} {reco_date.day}.xlsx"
 
     df_total = df_raw[~df_raw['Estado_lower'].str.contains('cancelad', na=False)].copy()
     pivot_total = df_total.groupby('PDV_lower').size().reset_index(name='Total de Guias')
@@ -487,21 +492,22 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     wb = writer.book
     ws = wb.add_worksheet('R7 CDMX')
 
-    main_color, dark_grey, light_yellow = '#C00000', '#333333', '#FFFF00'
+    # RESTORED COLORS & INCREASED FONTS
+    dark_purple, light_purple, yellow, red = '#2E003E', '#480060', '#FFFF00', '#990000'
     base_font = 'Calibri'
     base_size = 14
     
-    t_fmt = wb.add_format({'bold': True, 'font_size': 20, 'align': 'center', 'valign': 'vcenter', 'bg_color': main_color, 'font_color': 'white', 'font_name': base_font})
-    s_fmt = wb.add_format({'bold': False, 'font_size': 15, 'align': 'center', 'valign': 'vcenter', 'bg_color': main_color, 'font_color': 'white', 'font_name': base_font})
-    h_fmt = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_grey, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
+    t_fmt = wb.add_format({'bold': True, 'font_size': 22, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font})
+    s_fmt = wb.add_format({'bold': False, 'font_size': 15, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font})
+    h_fmt = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
     
-    gt_l = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_grey, 'font_color': 'white', 'border': 1, 'font_name': base_font})
-    gt_v = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_grey, 'font_color': 'white', 'border': 1, 'num_format': '#,##0', 'font_name': base_font})
-    gt_p = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_grey, 'font_color': 'white', 'border': 1, 'num_format': '0.00%', 'font_name': base_font})
+    gt_l = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': light_purple, 'font_color': 'white', 'border': 1, 'font_name': base_font})
+    gt_v = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': light_purple, 'font_color': 'white', 'border': 1, 'num_format': '#,##0', 'font_name': base_font})
+    gt_p = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': red, 'font_color': 'white', 'border': 1, 'num_format': '0.00%', 'font_name': base_font})
     
-    sub_l = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': light_yellow, 'font_color': 'black', 'border': 1, 'font_name': base_font})
-    sub_v = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': light_yellow, 'font_color': 'black', 'border': 1, 'num_format': '#,##0', 'font_name': base_font})
-    sub_p = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': main_color, 'font_color': 'white', 'border': 1, 'num_format': '0.00%', 'font_name': base_font})
+    sub_l = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': yellow, 'font_color': 'black', 'border': 1, 'font_name': base_font})
+    sub_v = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': yellow, 'font_color': 'black', 'border': 1, 'num_format': '#,##0', 'font_name': base_font})
+    sub_p = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': red, 'font_color': 'white', 'border': 1, 'num_format': '0.00%', 'font_name': base_font})
     
     spv_f = wb.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'bold': True, 'font_size': base_size, 'font_name': base_font})
     d_f = wb.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'font_size': base_size, 'num_format': '#,##0', 'font_name': base_font})
@@ -509,7 +515,7 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
 
     ws.set_column('A:A', 18); ws.set_column('B:B', 20); ws.set_column('C:C', 34); ws.set_column('D:F', 24); ws.set_column('G:G', 22)
     ws.merge_range('A1:G1', 'R7 CDMX 所有平台的揽收率', t_fmt)
-    ws.set_row(0, 40)
+    ws.set_row(0, 45)
     ws.merge_range('A2:G2', subtitle_str, s_fmt)
     ws.set_row(1, 28)
 
@@ -616,7 +622,6 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
 
     subtitle_str = f"订单日期： {pedidos_zh}, 收件日期 {reco_zh} Pedidos: {pedidos_es} | Reco: {reco_es}"
     
-    # Ensure it saves as .xlsx
     output_filename = raw_filename if raw_filename.endswith('.xlsx') else f"{raw_filename.split('.')[0]}.xlsx"
 
     for col in [pendientes_col, registrados_col, no_registrados_col]:
@@ -656,8 +661,8 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
     for col, width in c_w.items(): ws.column_dimensions[col].width = width
 
     ws.merge_cells('A1:G1')
-    ws['A1'].value, ws['A1'].font, ws['A1'].fill, ws['A1'].alignment = '问题件跟进 Seguimiento Paquetes de Anomalia', Font(name='Calibri', size=20, bold=True, color='FFFFFF'), fil_main, a_c
-    ws.row_dimensions[1].height = 40
+    ws['A1'].value, ws['A1'].font, ws['A1'].fill, ws['A1'].alignment = '问题件跟进 Seguimiento Paquetes de Anomalia', Font(name='Calibri', size=22, bold=True, color='FFFFFF'), fil_main, a_c
+    ws.row_dimensions[1].height = 45
 
     ws.merge_cells('A2:G2')
     ws['A2'].value, ws['A2'].font, ws['A2'].fill, ws['A2'].alignment = subtitle_str, Font(name='Calibri', size=15, bold=False, color='FFFFFF'), fil_main, a_c
@@ -778,7 +783,6 @@ if check_password():
                     elif report_type == "R7 CDMX":
                         processed_file, filename = generate_r7_cdmx(raw_data.getvalue(), spv_file_bytes)
                     elif report_type == "ANOMALIES (问题件跟进)":
-                        # Pass the original filename from the Streamlit uploaded file object
                         processed_file, filename = generate_anomalies(raw_data.getvalue(), spv_file_bytes, raw_data.name)
                     elif report_type == "ALIEXPRESS":
                         processed_file, filename = generate_aliexpress(raw_data.getvalue(), spv_file_bytes)
