@@ -88,6 +88,9 @@ def clean_spv_df(spv_file_bytes):
     if 'ZONA' not in df_spv.columns:
         df_spv['ZONA'] = ''
         
+    if 'PDV' not in df_spv.columns:
+        df_spv['PDV'] = ''
+        
     return df_spv
 
 
@@ -601,3 +604,493 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     cell_title.fill = fill_black
     cell_title.alignment = align_center
     ws.row_dimensions[1].height = 85
+
+    headers = ['负责人\nSPV', '区域\nZONA', '揽收网点\nPDV', '总扫描数据量\nTOTAL A', '未进行入库扫描包裹件数\nSIN ESCANEO DE', '未进行入库扫描包裹的百分比\n% SIN ESCANEO DE', '未进行出库扫描的包裹\nSIN ESCANEO DE', '未进行出库扫描包裹的百分比\n% SIN ESCANEO DE']
+    for col_num, h_text in enumerate(headers, 1):
+        c = ws.cell(row=2, column=col_num, value=h_text)
+        c.font = font_white_bold
+        c.fill = fill_dark_grey
+        c.alignment = align_center
+        c.border = thin_border
+    ws.row_dimensions[2].height = 65
+
+    gt_total = final_df['El número de pedidos de escaneo'].sum()
+    gt_rec = final_df['No. de escaneo faltante de recolección'].sum()
+    gt_rec_pct = gt_rec / gt_total if gt_total else 0
+    gt_sal = final_df['Nº de guías con escaneo faltantes de salida'].sum()
+    gt_sal_pct = gt_sal / gt_total if gt_total else 0
+
+    ws.merge_cells('A3:C3')
+    ws['A3'].value, ws['A3'].font, ws['A3'].fill, ws['A3'].alignment, ws['A3'].border = '总计', font_white_bold, fill_mid_grey, align_center, thin_border
+    
+    for col_idx, val, num_fmt, f_style, fill_style in [(4, gt_total, '#,##0', font_green_bold, fill_mid_grey), (5, gt_rec, '#,##0', font_green_bold, fill_mid_grey), (6, gt_rec_pct, '0.00%', font_white_bold, fill_red), (7, gt_sal, '#,##0', font_green_bold, fill_mid_grey), (8, gt_sal_pct, '0.00%', font_white_bold, fill_red)]:
+        c = ws.cell(row=3, column=col_idx, value=val)
+        c.font, c.fill, c.alignment, c.number_format, c.border = f_style, fill_style, align_center, num_fmt, thin_border
+    ws.row_dimensions[3].height = 28
+
+    current_row = 4
+    for spv_name, group in final_df.groupby('spv', sort=False):
+        spv_start_row = current_row
+        
+        zona_start_row = current_row
+        current_zona = None
+
+        for _, row in group.iterrows():
+            ws.cell(row=current_row, column=2, value=row['zona']).alignment = align_center
+            ws.cell(row=current_row, column=2).border = thin_border
+            ws.cell(row=current_row, column=2).font = font_regular
+            
+            if current_zona != row['zona']:
+                if current_zona is not None and current_row - 1 > zona_start_row:
+                    ws.merge_cells(start_row=zona_start_row, start_column=2, end_row=current_row - 1, end_column=2)
+                current_zona = row['zona']
+                zona_start_row = current_row
+
+            ws.cell(row=current_row, column=3, value=row['pdv']).alignment = align_center
+            for c_idx, key, fmt in [(4, 'El número de pedidos de escaneo', '#,##0'), (5, 'No. de escaneo faltante de recolección', '#,##0'), (6, 'tasa_recoleccion', '0.00%'), (7, 'Nº de guías con escaneo faltantes de salida', '#,##0'), (8, 'tasa_salida', '0.00%')]:
+                c = ws.cell(row=current_row, column=c_idx, value=float(row[key]) if '%' in fmt else row[key])
+                c.number_format, c.alignment = fmt, align_center
+            for col_idx in [3, 4, 5, 6, 7, 8]:
+                ws.cell(row=current_row, column=col_idx).font = font_regular
+                ws.cell(row=current_row, column=col_idx).border = thin_border
+            ws.row_dimensions[current_row].height = 24
+            current_row += 1
+
+        if current_zona is not None and current_row - 1 > zona_start_row:
+            ws.merge_cells(start_row=zona_start_row, start_column=2, end_row=current_row - 1, end_column=2)
+
+        if current_row - 1 > spv_start_row: 
+            ws.merge_cells(start_row=spv_start_row, start_column=1, end_row=current_row - 1, end_column=1)
+            
+        ws.cell(row=spv_start_row, column=1, value=spv_name).font = font_black_bold
+        ws.cell(row=spv_start_row, column=1).alignment = align_center
+        ws.cell(row=spv_start_row, column=1).border = thin_border
+
+        sub_total = group['El número de pedidos de escaneo'].sum()
+        sub_rec = group['No. de escaneo faltante de recolección'].sum()
+        sub_rec_pct = sub_rec / sub_total if sub_total else 0
+        sub_sal = group['Nº de guías con escaneo faltantes de salida'].sum()
+        sub_sal_pct = sub_sal / sub_total if sub_total else 0
+
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=3)
+        sub = ws.cell(row=current_row, column=1, value=f'TOTAL {spv_name}')
+        sub.font, sub.fill, sub.alignment, sub.border = font_black_bold, fill_yellow, align_center, thin_border
+        
+        ws.cell(row=current_row, column=2).border = thin_border
+        ws.cell(row=current_row, column=3).border = thin_border
+
+        for col_idx, val, num_fmt, f_style, fill_style in [(4, sub_total, '#,##0', font_black_bold, fill_yellow), (5, sub_rec, '#,##0', font_black_bold, fill_yellow), (6, sub_rec_pct, '0.00%', font_white_bold, fill_red), (7, sub_sal, '#,##0', font_black_bold, fill_yellow), (8, sub_sal_pct, '0.00%', font_white_bold, fill_red)]:
+            c = ws.cell(row=current_row, column=col_idx, value=val)
+            c.font, c.fill, c.alignment, c.number_format, c.border = f_style, fill_style, align_center, num_fmt, thin_border
+        ws.row_dimensions[current_row].height = 28
+        current_row += 1
+
+    output = io.BytesIO()
+    wb.save(output)
+    return output.getvalue(), output_filename
+
+
+def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
+    df_spv = clean_spv_df(spv_file_bytes)
+    
+    df_spv['SPV'] = df_spv['SPV'].astype(str).str.strip().str.upper()
+    df_spv['ZONA'] = df_spv['ZONA'].astype(str).str.strip()
+    df_spv['PDV'] = df_spv['PDV'].astype(str).str.strip()
+    df_spv['PDV_lower'] = df_spv['PDV'].str.lower()
+    
+    valid_spvs = [str(spv).strip().upper() for spv in df_spv['SPV'].dropna().unique() if 'CEDIS' not in str(spv).strip().upper()]
+    spv_map = df_spv[df_spv['SPV'].isin(valid_spvs)].drop_duplicates(subset=['PDV_lower']).copy()
+
+    df_raw = None
+    try:
+        df_raw = pd.read_excel(io.BytesIO(raw_file_bytes), engine='openpyxl')
+    except Exception:
+        for enc in ['utf-8-sig', 'latin1', 'cp1252', 'gbk']:
+            for sep in [',', '\t', ';', '|']:
+                try:
+                    df_temp = pd.read_csv(io.BytesIO(raw_file_bytes), sep=sep, encoding=enc, on_bad_lines='skip', low_memory=False)
+                    if len(df_temp.columns) > 3:
+                        df_raw = df_temp
+                        break
+                except Exception: continue
+            if df_raw is not None: break
+
+    df_raw.columns = df_raw.columns.astype(str).str.strip()
+    df_raw['NORMAL_PDV'] = df_raw['Punto de Recogida'].astype(str).str.strip()
+    df_raw['PDV_lower'] = df_raw['NORMAL_PDV'].str.lower()
+    df_raw['Estado_lower'] = df_raw['Estado de la orden'].astype(str).str.strip().str.lower()
+
+    order_times = pd.to_datetime(df_raw['Tiempo de registro de la orden'], errors='coerce')
+    unique_dates = sorted(order_times.dt.date.dropna().unique())
+    months_en = {1: 'JAN', 2: 'FEB', 3: 'MAR', 4: 'APR', 5: 'MAY', 6: 'JUN', 7: 'JUL', 8: 'AUG', 9: 'SEP', 10: 'OCT', 11: 'NOV', 12: 'DEC'}
+    months_es = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
+
+    if unique_dates:
+        min_o, max_o = unique_dates[0], unique_dates[-1]
+        reco_date = max_o + datetime.timedelta(days=1)
+        if min_o == max_o:
+            pedidos_es = f"{months_es[min_o.month]} {min_o.day}"
+            pedidos_zh = f"{min_o.month}月{min_o.day}日"
+        elif min_o.month == max_o.month:
+            pedidos_es = f"{months_es[min_o.month]} {min_o.day}-{max_o.day}"
+            pedidos_zh = f"{min_o.month}月{min_o.day}-{max_o.day}日"
+        else:
+            pedidos_es = f"{months_es[min_o.month]} {min_o.day}-{months_es[max_o.month]} {max_o.day}"
+            pedidos_zh = f"{min_o.month}月{min_o.day}日-{max_o.month}月{max_o.day}日"
+        reco_es = f"{months_es[reco_date.month]} {reco_date.day}"
+        reco_zh = f"{reco_date.month}月{reco_date.day}日"
+    else:
+        today = datetime.date.today()
+        reco_date = today + datetime.timedelta(days=1)
+        pedidos_es, pedidos_zh = f"{months_es[today.month]} {today.day}", f"{today.month}月{today.day}日"
+        reco_es, reco_zh = f"{months_es[reco_date.month]} {reco_date.day}", f"{reco_date.month}月{reco_date.day}日"
+
+    subtitle_str = f"订单日期: {pedidos_zh}, 揽收日期 {reco_zh} Pedidos: {pedidos_es} | Reco: {reco_es}"
+    
+    output_filename = f"R7 CDMX {months_en[reco_date.month]} {reco_date.day}.xlsx"
+
+    df_total = df_raw[~df_raw['Estado_lower'].str.contains('cancelad', na=False)].copy()
+    pivot_total = df_total.groupby('PDV_lower').size().reset_index(name='Total de Guias')
+
+    spv_lookup = spv_map.set_index('PDV_lower')
+    df_report = pivot_total.copy()
+    df_report['SPV'] = df_report['PDV_lower'].map(spv_lookup['SPV'])
+    df_report['ZONA'] = df_report['PDV_lower'].map(spv_lookup['ZONA'])
+    df_report['PDV'] = df_report['PDV_lower'].map(spv_lookup['PDV'])
+    df_report = df_report[df_report['SPV'].notna()].copy()
+
+    mask_cancelado = df_raw['Estado_lower'].str.contains('cancelad', na=False)
+    mask_recepcion = df_raw['Estado_lower'].str.contains('recep', na=False)
+    df_por_rec = df_raw[~(mask_cancelado | mask_recepcion)].copy()
+    pivot_por_rec = df_por_rec.groupby('PDV_lower').size().reset_index(name='Guias por Recolectar')
+
+    por_rec_lookup = pivot_por_rec.set_index('PDV_lower')['Guias por Recolectar']
+    df_report['Guias por Recolectar'] = df_report['PDV_lower'].map(por_rec_lookup).fillna(0)
+    df_report['Guias Recolectadas'] = df_report['Total de Guias'] - df_report['Guias por Recolectar']
+    df_report['Rate %'] = (df_report['Guias Recolectadas'] / df_report['Total de Guias']).fillna(0)
+    df_report.sort_values(by=['SPV', 'ZONA', 'PDV'], ascending=[True, True, True], inplace=True)
+
+    output = io.BytesIO()
+    writer = pd.ExcelWriter(output, engine='xlsxwriter')
+    wb = writer.book
+    ws = wb.add_worksheet('R7 CDMX')
+
+    dark_purple, light_purple, yellow, red = '#2E003E', '#480060', '#FFFF00', '#990000'
+    base_font = 'Calibri'
+    base_size = 14
+    
+    t_fmt = wb.add_format({'bold': True, 'font_size': 36, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font})
+    s_fmt = wb.add_format({'bold': False, 'font_size': 15, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font})
+    h_fmt = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
+    
+    gt_l = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': light_purple, 'font_color': 'white', 'border': 1, 'font_name': base_font})
+    gt_v = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': light_purple, 'font_color': 'white', 'border': 1, 'num_format': '#,##0', 'font_name': base_font})
+    gt_p = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': red, 'font_color': 'white', 'border': 1, 'num_format': '0.00%', 'font_name': base_font})
+    
+    sub_l = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': yellow, 'font_color': 'black', 'border': 1, 'font_name': base_font})
+    sub_v = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': yellow, 'font_color': 'black', 'border': 1, 'num_format': '#,##0', 'font_name': base_font})
+    sub_p = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': red, 'font_color': 'white', 'border': 1, 'num_format': '0.00%', 'font_name': base_font})
+    
+    spv_f = wb.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'bold': True, 'font_size': base_size, 'font_name': base_font})
+    d_f = wb.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'font_size': base_size, 'num_format': '#,##0', 'font_name': base_font})
+    dp_f = wb.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'font_size': base_size, 'num_format': '0.00%', 'font_name': base_font})
+
+    ws.set_column('A:A', 18); ws.set_column('B:B', 20); ws.set_column('C:C', 34); ws.set_column('D:F', 24); ws.set_column('G:G', 22)
+    ws.merge_range('A1:G1', 'R7 CDMX 所有平台的揽收率', t_fmt)
+    ws.set_row(0, 70) 
+    ws.merge_range('A2:G2', subtitle_str, s_fmt)
+    ws.set_row(1, 28)
+
+    headers = ['', 'ZONA', '客户归属网点\nPDV', '当日包裹总数\nTotal de Guias', '已收取的包裹\nGuias Recolectadas', '待收取的包裹\nGuias por Recolectar', '商家拜访率\nRate %']
+    for col, h in enumerate(headers): ws.write(2, col, h, h_fmt)
+    ws.set_row(2, 54)
+
+    ws.merge_range('A4:C4', 'GRAND TOTAL 总计', gt_l)
+    ws.write(3, 3, df_report['Total de Guias'].sum(), gt_v)
+    ws.write(3, 4, df_report['Guias Recolectadas'].sum(), gt_v)
+    ws.write(3, 5, df_report['Guias por Recolectar'].sum(), gt_v)
+    ws.write(3, 6, df_report['Guias Recolectadas'].sum() / df_report['Total de Guias'].sum() if df_report['Total de Guias'].sum() else 0, gt_p)
+    ws.set_row(3, 32)
+
+    c_row = 4
+    for spv_name, group in df_report.groupby('SPV', sort=False):
+        spv_start_row = c_row
+        
+        zona_start_row = c_row
+        current_zona = None
+
+        for _, row in group.iterrows():
+            if current_zona != row['ZONA']:
+                if current_zona is not None:
+                    if c_row - 1 > zona_start_row:
+                        ws.merge_range(zona_start_row, 1, c_row - 1, 1, current_zona, d_f)
+                    else:
+                        ws.write(zona_start_row, 1, current_zona, d_f)
+                current_zona = row['ZONA']
+                zona_start_row = c_row
+
+            ws.write(c_row, 2, row['PDV'], d_f)
+            ws.write(c_row, 3, row['Total de Guias'], d_f)
+            ws.write(c_row, 4, row['Guias Recolectadas'], d_f)
+            ws.write(c_row, 5, row['Guias por Recolectar'], d_f)
+            ws.write(c_row, 6, float(row['Rate %']), dp_f)
+            ws.set_row(c_row, 24)
+            c_row += 1
+            
+        if current_zona is not None:
+            if c_row - 1 > zona_start_row:
+                ws.merge_range(zona_start_row, 1, c_row - 1, 1, current_zona, d_f)
+            else:
+                ws.write(zona_start_row, 1, current_zona, d_f)
+
+        if c_row - 1 > spv_start_row: 
+            ws.merge_range(spv_start_row, 0, c_row - 1, 0, spv_name, spv_f)
+        else: 
+            ws.write(spv_start_row, 0, spv_name, spv_f)
+
+        s_tot, s_rec, s_por = group['Total de Guias'].sum(), group['Guias Recolectadas'].sum(), group['Guias por Recolectar'].sum()
+        ws.merge_range(f'A{c_row+1}:C{c_row+1}', f'TOTAL {spv_name}', sub_l)
+        ws.write(c_row, 3, s_tot, sub_v)
+        ws.write(c_row, 4, s_rec, sub_v)
+        ws.write(c_row, 5, s_por, sub_v)
+        ws.write(c_row, 6, s_rec/s_tot if s_tot else 0, sub_p)
+        ws.set_row(c_row, 32)
+        c_row += 1
+
+    writer.close()
+    return output.getvalue(), output_filename
+
+
+def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
+    df_spv = clean_spv_df(spv_file_bytes)
+
+    df_spv['SPV'] = df_spv['SPV'].astype(str).str.strip().str.upper()
+    df_spv['ZONA'] = df_spv['ZONA'].astype(str).str.strip()
+    df_spv['PDV'] = df_spv['PDV'].astype(str).str.strip()
+    df_spv['PDV_lower'] = df_spv['PDV'].str.lower()
+    
+    valid_spvs = [str(spv).strip().upper() for spv in df_spv['SPV'].dropna().unique() if 'CEDIS' not in str(spv).strip().upper()]
+    spv_map = df_spv[df_spv['SPV'].isin(valid_spvs)].drop_duplicates(subset=['PDV_lower']).copy()
+
+    xls = pd.ExcelFile(io.BytesIO(raw_file_bytes), engine='openpyxl')
+    target_sheet = [s for s in xls.sheet_names if '未取件客户明细' in s or '网点明细' in s]
+    sheet_to_load = target_sheet[0] if target_sheet else 0
+    df_raw = pd.read_excel(io.BytesIO(raw_file_bytes), sheet_name=sheet_to_load, engine='openpyxl')
+    df_raw.columns = df_raw.columns.astype(str).str.strip()
+
+    pdv_col = [c for c in df_raw.columns if '网点' in c][0]
+    pendientes_col = [c for c in df_raw.columns if '未取件订单' in c][0]
+    registrados_col = [c for c in df_raw.columns if '已登记' in c][0]
+    no_registrados_col = [c for c in df_raw.columns if '未登记' in c][0]
+
+    order_col = [c for c in df_raw.columns if '订单日期' in c]
+    reco_col = [c for c in df_raw.columns if '考核' in c or '收件' in c]
+
+    order_times = pd.to_datetime(df_raw[order_col[0]], errors='coerce') if order_col else pd.Series(dtype='datetime64[ns]')
+    reco_times = pd.to_datetime(df_raw[reco_col[0]], errors='coerce') if reco_col else pd.Series(dtype='datetime64[ns]')
+    unique_order = sorted(order_times.dt.date.dropna().unique())
+    unique_reco = sorted(reco_times.dt.date.dropna().unique())
+    months_es = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
+
+    if unique_order and unique_reco:
+        o_date, r_date = unique_order[-1], unique_reco[-1]
+        pedidos_zh, pedidos_es = f"{o_date.month}月{o_date.day}日", f"{months_es[o_date.month]} {o_date.day}"
+        reco_zh, reco_es = f"{r_date.month}月{r_date.day}日", f"{months_es[r_date.month]} {r_date.day}"
+    else:
+        today = datetime.date.today()
+        r_date = today + datetime.timedelta(days=1)
+        pedidos_zh, pedidos_es = f"{today.month}月{today.day}日", f"{months_es[today.month]} {today.day}"
+        reco_zh, reco_es = f"{r_date.month}月{r_date.day}日", f"{months_es[r_date.month]} {r_date.day}"
+
+    subtitle_str = f"订单日期： {pedidos_zh}, 收件日期 {reco_zh} Pedidos: {pedidos_es} | Reco: {reco_es}"
+    
+    output_filename = raw_filename if raw_filename.endswith('.xlsx') else f"{raw_filename.split('.')[0]}.xlsx"
+
+    for col in [pendientes_col, registrados_col, no_registrados_col]:
+        df_raw[col] = pd.to_numeric(df_raw[col], errors='coerce').fillna(0)
+
+    pivot_total = df_raw.groupby(pdv_col).agg({pendientes_col: 'sum', registrados_col: 'sum', no_registrados_col: 'sum'}).reset_index()
+    pivot_total.columns = ['PDV', 'Pendientes', 'Registrados', 'No_Registrados']
+    pivot_total['PDV_lower'] = pivot_total['PDV'].astype(str).str.strip().str.lower()
+
+    spv_lookup = spv_map.set_index('PDV_lower')
+    df_report = pivot_total.copy()
+    df_report['SPV'] = df_report['PDV_lower'].map(spv_lookup['SPV'])
+    df_report['ZONA'] = df_report['PDV_lower'].map(spv_lookup['ZONA'])
+    df_report['PDV_Clean'] = df_report['PDV_lower'].map(spv_lookup['PDV'])
+
+    df_report = df_report[df_report['SPV'].notna()].copy()
+    df_report['PDV'] = df_report['PDV_Clean'].combine_first(df_report['PDV'])
+    df_report['Rate %'] = (df_report['Registrados'] / df_report['Pendientes']).fillna(0)
+    df_report.sort_values(by=['SPV', 'ZONA', 'No_Registrados', 'PDV'], ascending=[True, True, False, True], inplace=True)
+
+    wb = openpyxl.load_workbook(io.BytesIO(raw_file_bytes))
+    if 'Anomalias' in wb.sheetnames: del wb['Anomalias']
+    ws = wb.create_sheet(title='Anomalias', index=0)
+
+    f_w = Font(name='Calibri', size=14, bold=True, color='FFFFFF')
+    f_b = Font(name='Calibri', size=14, bold=True, color='000000')
+    f_r = Font(name='Calibri', size=14, bold=False, color='000000')
+    
+    fil_main = PatternFill(start_color='C00000', end_color='C00000', fill_type='solid')
+    fil_dark_grey = PatternFill(start_color='333333', end_color='333333', fill_type='solid')
+    fil_y = PatternFill(start_color='FFFF00', end_color='FFFF00', fill_type='solid')
+    
+    a_c = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    b_t = Border(left=Side(style='thin', color='A6A6A6'), right=Side(style='thin', color='A6A6A6'), top=Side(style='thin', color='A6A6A6'), bottom=Side(style='thin', color='A6A6A6'))
+
+    c_w = {'A': 18, 'B': 20, 'C': 34, 'D': 26, 'E': 26, 'F': 26, 'G': 24}
+    for col, width in c_w.items(): ws.column_dimensions[col].width = width
+
+    ws.merge_cells('A1:G1')
+    ws['A1'].value, ws['A1'].font, ws['A1'].fill, ws['A1'].alignment = '问题件跟进 Seguimiento Paquetes de Anomalia', Font(name='Calibri', size=36, bold=True, color='FFFFFF'), fil_main, a_c
+    ws.row_dimensions[1].height = 70 
+
+    ws.merge_cells('A2:G2')
+    ws['A2'].value, ws['A2'].font, ws['A2'].fill, ws['A2'].alignment = subtitle_str, Font(name='Calibri', size=15, bold=False, color='FFFFFF'), fil_main, a_c
+    ws.row_dimensions[2].height = 28
+
+    headers = ['', 'ZONA', '客户归属网点\nPDV', '未取件订单量合计\nPaquetes pendientes de Recoleccion', '已登记问题件量合计\nPaquetes de Anomalia Registrados', '未登记问题件量合计\nPaquetes de Anomalia NO Registrados', '问题件登记率\n% Registro de Paquetes de Anomalia']
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(row=3, column=col, value=h)
+        c.font, c.fill, c.alignment, c.border = f_w, fil_dark_grey, a_c, b_t
+    ws.row_dimensions[3].height = 65
+
+    ws.merge_cells('A4:C4')
+    ws['A4'].value, ws['A4'].font, ws['A4'].fill, ws['A4'].alignment, ws['A4'].border = 'GRAND TOTAL 总计', f_w, fil_dark_grey, a_c, b_t
+
+    gt_p, gt_r, gt_n = df_report['Pendientes'].sum(), df_report['Registrados'].sum(), df_report['No_Registrados'].sum()
+    for i, val in enumerate([gt_p, gt_r, gt_n], start=4):
+        c = ws.cell(row=4, column=i, value=val)
+        c.font, c.fill, c.alignment, c.number_format, c.border = f_w, fil_dark_grey, a_c, '#,##0', b_t
+    c = ws.cell(row=4, column=7, value=gt_r/gt_p if gt_p else 0)
+    c.font, c.fill, c.alignment, c.number_format, c.border = f_w, fil_dark_grey, a_c, '0.00%', b_t
+    ws.row_dimensions[4].height = 32
+
+    c_row = 5
+    for spv_name, group in df_report.groupby('SPV', sort=False):
+        spv_start_row = c_row
+        
+        zona_start_row = c_row
+        current_zona = None
+
+        for _, row in group.iterrows():
+            ws.cell(row=c_row, column=2, value=row['ZONA']).alignment = a_c
+            ws.cell(row=c_row, column=2).font = f_r
+            ws.cell(row=c_row, column=2).border = b_t
+            
+            if current_zona != row['ZONA']:
+                if current_zona is not None and c_row - 1 > zona_start_row:
+                    ws.merge_cells(start_row=zona_start_row, start_column=2, end_row=c_row - 1, end_column=2)
+                current_zona = row['ZONA']
+                zona_start_row = c_row
+
+            ws.cell(row=c_row, column=3, value=row['PDV']).alignment = a_c
+            for idx, k, fmt in [(4, 'Pendientes', '#,##0'), (5, 'Registrados', '#,##0'), (6, 'No_Registrados', '#,##0'), (7, 'Rate %', '0.00%')]:
+                c = ws.cell(row=c_row, column=idx, value=float(row[k]) if '%' in fmt else row[k])
+                c.number_format, c.alignment = fmt, a_c
+            for col_idx in [3, 4, 5, 6, 7]:
+                ws.cell(row=c_row, column=col_idx).font = f_r
+                ws.cell(row=c_row, column=col_idx).border = b_t
+            ws.row_dimensions[c_row].height = 24
+            c_row += 1
+
+        if current_zona is not None and c_row - 1 > zona_start_row:
+            ws.merge_cells(start_row=zona_start_row, start_column=2, end_row=c_row - 1, end_column=2)
+
+        if c_row - 1 > spv_start_row: 
+            ws.merge_cells(start_row=spv_start_row, start_column=1, end_row=c_row - 1, end_column=1)
+            
+        c = ws.cell(row=spv_start_row, column=1, value=spv_name)
+        c.font, c.alignment, c.border = f_b, a_c, b_t
+
+        s_p, s_r, s_n = group['Pendientes'].sum(), group['Registrados'].sum(), group['No_Registrados'].sum()
+        ws.merge_cells(start_row=c_row, start_column=1, end_row=c_row, end_column=3)
+        c = ws.cell(row=c_row, column=1, value=f'TOTAL {spv_name}')
+        c.font, c.fill, c.alignment, c.border = f_b, fil_y, a_c, b_t
+        
+        ws.cell(row=c_row, column=2).border = b_t
+        ws.cell(row=c_row, column=3).border = b_t
+
+        for col, val in [(4, s_p), (5, s_r)]:
+            c = ws.cell(row=c_row, column=col, value=val)
+            c.font, c.fill, c.alignment, c.number_format, c.border = f_b, fil_y, a_c, '#,##0', b_t
+
+        for col, val, fmt in [(6, s_n, '#,##0'), (7, s_r/s_p if s_p else 0, '0.00%')]:
+            c = ws.cell(row=c_row, column=col, value=val)
+            c.font, c.fill, c.alignment, c.number_format, c.border = f_w, fil_main, a_c, fmt, b_t
+            
+        ws.row_dimensions[c_row].height = 32
+        c_row += 1
+
+    output = io.BytesIO()
+    wb.save(output)
+    return output.getvalue(), output_filename
+
+
+# ==============================================================================
+# MAIN WEB UI
+# ==============================================================================
+if check_password():
+    st.title("📊 Automated Reporting Portal")
+    st.markdown("Upload your daily raw data below to instantly generate standardized Excel reports.")
+    
+    # 1. READ "SUPERVISORES VISITAS.xlsx" FOR TIKTOK
+    try:
+        with open("SUPERVISORES VISITAS.xlsx", "rb") as f:
+            spv_visitas_bytes = f.read()
+    except FileNotFoundError:
+        st.error(
+            "🚨 **CRITICAL ERROR:** `SUPERVISORES VISITAS.xlsx` was not found in the root directory. "
+            "Please make sure the file is saved in the repository on GitHub."
+        )
+        st.stop()
+
+    # 2. READ "SUPERVISORES.xlsx" FOR EVERYTHING ELSE
+    try:
+        with open("SUPERVISORES.xlsx", "rb") as f:
+            spv_general_bytes = f.read()
+    except FileNotFoundError:
+        st.error(
+            "🚨 **CRITICAL ERROR:** `SUPERVISORES.xlsx` was not found in the root directory. "
+            "Please make sure the file is saved in the repository on GitHub."
+        )
+        st.stop()
+        
+    st.divider()
+
+    report_type = st.selectbox(
+        "Select the report you want to generate:",
+        ("MISSING SCAN", "R7 CDMX", "ANOMALIES (问题件跟进)", "ALIEXPRESS", "TIKTOK PENDING VISITS")
+    )
+    
+    raw_data = st.file_uploader("📥 Upload Daily Raw Data (.xlsx, .csv)", type=["xlsx", "csv"])
+    
+    if st.button("🚀 Generate Report", type="primary", use_container_width=True):
+        if raw_data is None:
+            st.warning("⚠️ Please upload the Daily Raw Data before proceeding.")
+        else:
+            with st.spinner(f'Crunching the numbers and formatting your {report_type} report...'):
+                try:
+                    if report_type == "TIKTOK PENDING VISITS":
+                        processed_file, filename = generate_tiktok_visits(raw_data.getvalue(), spv_visitas_bytes)
+                    elif report_type == "MISSING SCAN":
+                        processed_file, filename = generate_missing_scan(raw_data.getvalue(), spv_general_bytes)
+                    elif report_type == "R7 CDMX":
+                        processed_file, filename = generate_r7_cdmx(raw_data.getvalue(), spv_general_bytes)
+                    elif report_type == "ANOMALIES (问题件跟进)":
+                        processed_file, filename = generate_anomalies(raw_data.getvalue(), spv_general_bytes, raw_data.name)
+                    elif report_type == "ALIEXPRESS":
+                        processed_file, filename = generate_aliexpress(raw_data.getvalue(), spv_general_bytes)
+                    
+                    st.success(f"✅ Your {report_type} report was generated successfully!")
+                    
+                    st.download_button(
+                        label="📥 Download Finished Excel Report",
+                        data=processed_file,
+                        file_name=filename,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                except Exception as e:
+                    st.error(f"❌ An error occurred while processing the file: {e}")
