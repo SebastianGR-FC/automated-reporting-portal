@@ -271,13 +271,13 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         blue_bg = workbook.add_format({'bg_color': '#5B9BD5', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
         purple_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'text_wrap': True, 'font_name': font_family, 'font_size': 13})
         
-        # DATE FORMAT DECREASED TO 16PT BOLD
-        purple_date_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 16})
+        # DATE FORMAT DECREASED TO 14PT BOLD
+        purple_date_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 14})
         
         red_bg = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
         yellow_bg = workbook.add_format({'bg_color': '#FFFF00', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
         
-        title_fmt = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family})
+        title_fmt = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family})
         sub_title_fmt = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family})
         time_badge_fmt = workbook.add_format({'bg_color': '#FFFF00', 'bold': True, 'italic': True, 'align': 'center', 'valign': 'vcenter', 'font_size': 18, 'font_name': font_family, 'border': 1})
         
@@ -302,7 +302,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         worksheet.write(2, 4, '+50', red_bg)
         worksheet.set_row(2, 32)
         
-        # BOLD 16PT DATE IN ROW 4
+        # BOLD 14PT DATE IN ROW 4
         worksheet.write(3, 0, '', purple_date_bg)
         worksheet.merge_range(3, 1, 3, 4, report_date_str, purple_date_bg)
         worksheet.set_row(3, 26)
