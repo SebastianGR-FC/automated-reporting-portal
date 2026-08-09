@@ -134,7 +134,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         df_tabla = pd.DataFrame()
         target_hour = 9
 
-    # 3. DYNAMIC DATE EXTRACTION, ORDER DATE FILTERING, AND NEXT-DAY REPORT LABEL
+    # 3. DYNAMIC DATE EXTRACTION & +1 DAY SHIFT
     months_en = {1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun', 
                  7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'}
     
@@ -142,13 +142,12 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
     if 'Tiempo de registro de la orden' in df_raw.columns:
         dates = pd.to_datetime(df_raw['Tiempo de registro de la orden']).dt.date
         o_date = dates.value_counts().idxmax()
-
+        
+        # Add 1 day to date for pickup day representation
         target_reco_date = o_date + datetime.timedelta(days=1)
         report_date_str = f"{target_reco_date.day:02d}-{months_en[target_reco_date.month]}"
         
-        # Filter dataset strictly to orders from the order date.
-        # This prevents new orders placed today from leaking into the dataset
-        # and causing negative formula values.
+        # Filter dataset strictly to orders from the order date
         df_raw = df_raw[dates == o_date].copy()
     else:
         report_date_str = "N/A"
@@ -208,7 +207,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
                     return '#N/A'
                 try:
                     diff = int(val_9) - int(val_curr)
-                    return diff # Reverted to standard math; data filtering prevents negative values
+                    return diff
                 except Exception:
                     return '#N/A'
 
@@ -329,11 +328,10 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         
         for col_num, value in enumerate(df_tabla.columns):
             worksheet_tabla.write(0, col_num, value, tabla_header)
-        # Safely cast all values to string to avoid float length exceptions
-        val_lens = df_tabla[value].astype(str).str.len()
-        max_val_len = val_lens.max() if not val_lens.empty and pd.notna(val_lens.max()) else 0
-        max_len = max(max_val_len, len(str(value))) + 4
-        worksheet_tabla.set_column(col_num, col_num, max(max_len, 14), tabla_data)
+            val_lens = df_tabla[value].astype(str).str.len()
+            max_val_len = val_lens.max() if not val_lens.empty and pd.notna(val_lens.max()) else 0
+            max_len = max(max_val_len, len(str(value))) + 4
+            worksheet_tabla.set_column(col_num, col_num, max(max_len, 14), tabla_data)
         worksheet_tabla.set_row(0, 26)
 
         # --- Sheet 3: ORIGINAL RAW DATA (AUTO-STRETCHED COLUMNS) ---
