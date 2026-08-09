@@ -271,7 +271,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         blue_bg = workbook.add_format({'bg_color': '#5B9BD5', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
         purple_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'text_wrap': True, 'font_name': font_family, 'font_size': 13})
         
-        # DATE FORMAT DECREASED TO 16PT BOLD
+        # DATE FORMAT SET TO 16PT BOLD
         purple_date_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 16})
         
         red_bg = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
@@ -996,17 +996,17 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
     if 'Anomalias' in wb.sheetnames: del wb['Anomalias']
     ws = wb.create_sheet(title='Anomalias', index=0)
 
-    f_w = Font(name='Calibri', size=14, bold=True, color='FFFFFF')
-    f_b = Font(name='Calibri', size=14, bold=True, color='000000')
-    f_r = Font(name='Calibri', size=14, bold=False, color='000000')
-    f_subtitle_24 = Font(name='Calibri', size=24, bold=True, color='FFFFFF')
+    font_white_bold = Font(name='Calibri', size=14, bold=True, color='FFFFFF')
+    font_black_bold = Font(name='Calibri', size=14, bold=True, color='000000')
+    font_regular = Font(name='Calibri', size=14, bold=False, color='000000')
+    font_subtitle_24 = Font(name='Calibri', size=24, bold=True, color='FFFFFF')
     
     fil_main = PatternFill(start_color='C00000', end_color='C00000', fill_type='solid')
     fil_dark_grey = PatternFill(start_color='333333', end_color='333333', fill_type='solid')
     fil_y = PatternFill(start_color='FFFF00', end_color='FFFF00', fill_type='solid')
     
     a_c = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    b_t = Border(left=Side(style='thin', color='A6A6A6'), right=Side(style='thin', color='A6A6A6'), top=Side(style='thin', color='A6A6A6'), bottom=Side(style='thin', color='A6A6A6'))
+    thin_border = Border(left=Side(style='thin', color='A6A6A6'), right=Side(style='thin', color='A6A6A6'), top=Side(style='thin', color='A6A6A6'), bottom=Side(style='thin', color='A6A6A6'))
 
     c_w = {'A': 22, 'B': 22, 'C': 36, 'D': 28, 'E': 28, 'F': 28, 'G': 26}
     for col, width in c_w.items(): ws.column_dimensions[col].width = width
@@ -1017,28 +1017,28 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
 
     # BOLD 24PT DATE SUBTITLE
     ws.merge_cells('A2:G2')
-    ws['A2'].value, ws['A2'].font, ws['A2'].fill, ws['A2'].alignment = subtitle_str, f_subtitle_24, fil_main, a_c
+    ws['A2'].value, ws['A2'].font, ws['A2'].fill, ws['A2'].alignment = subtitle_str, font_subtitle_24, fil_main, a_c
     ws.row_dimensions[2].height = 38
 
     headers = ['', 'ZONA', '客户归属网点\nPDV', '未取件订单量合计\nPaquetes pendientes de Recoleccion', '已登记问题件量合计\nPaquetes de Anomalia Registrados', '未登记问题件量合计\nPaquetes de Anomalia NO Registrados', '问题件登记率\n% Registro de Paquetes de Anomalia']
     for col, h in enumerate(headers, 1):
         c = ws.cell(row=3, column=col, value=h)
-        c.font, c.fill, c.alignment, c.border = f_w, fil_dark_grey, a_c, b_t
+        c.font, c.fill, c.alignment, c.border = font_white_bold, fil_dark_grey, a_c, thin_border
     ws.row_dimensions[3].height = 65
 
     # GRAND TOTAL ROW: QUANTITIES IN DARK GREY, PERCENTAGE RATE ONLY IN RED
     gt_p, gt_r, gt_n = df_report['Pendientes'].sum(), df_report['Registrados'].sum(), df_report['No_Registrados'].sum()
     
     ws.merge_cells('A4:C4')
-    ws['A4'].value, ws['A4'].font, ws['A4'].fill, ws['A4'].alignment, ws['A4'].border = 'GRAND TOTAL 总计', f_w, fil_dark_grey, a_c, b_t
+    ws['A4'].value, ws['A4'].font, ws['A4'].fill, ws['A4'].alignment, ws['A4'].border = 'GRAND TOTAL 总计', font_white_bold, fil_dark_grey, a_c, thin_border
 
     for i, val in enumerate([gt_p, gt_r, gt_n], start=4):
         c = ws.cell(row=4, column=i, value=val)
-        c.font, c.fill, c.alignment, c.number_format, c.border = f_w, fil_dark_grey, a_c, '#,##0', b_t
+        c.font, c.fill, c.alignment, c.number_format, c.border = font_white_bold, fil_dark_grey, a_c, '#,##0', thin_border
         
     # PERCENTAGE CELL HIGHLIGHTED RED (fil_main) ONLY
     c_gt_rate = ws.cell(row=4, column=7, value=gt_r/gt_p if gt_p else 0)
-    c_gt_rate.font, c_gt_rate.fill, c_gt_rate.alignment, c_gt_rate.number_format, c_gt_rate.border = f_w, fil_main, a_c, '0.00%', b_t
+    c_gt_rate.font, c_gt_rate.fill, c_gt_rate.alignment, c_gt_rate.number_format, c_gt_rate.border = font_white_bold, fil_main, a_c, '0.00%', thin_border
     ws.row_dimensions[4].height = 34
 
     current_row = 5
@@ -1050,7 +1050,7 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
 
         for _, row in group.iterrows():
             ws.cell(row=current_row, column=2, value=row['ZONA']).alignment = a_c
-            ws.cell(row=current_row, column=2).border = b_t
+            ws.cell(row=current_row, column=2).border = thin_border
             ws.cell(row=current_row, column=2).font = font_regular
             
             if current_zona != row['ZONA']:
@@ -1079,7 +1079,7 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
 
             for col_idx in [3, 4, 5, 6, 7]:
                 ws.cell(row=current_row, column=col_idx).font = font_regular
-                ws.cell(row=current_row, column=col_idx).border = b_t
+                ws.cell(row=current_row, column=col_idx).border = thin_border
                 ws.cell(row=current_row, column=col_idx).alignment = a_c
             ws.row_dimensions[current_row].height = 24
             current_row += 1
@@ -1091,23 +1091,23 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
             ws.merge_cells(start_row=spv_start_row, start_column=1, end_row=current_row - 1, end_column=1)
             
         c = ws.cell(row=spv_start_row, column=1, value=spv_name)
-        c.font, c.alignment, c.border = f_b, a_c, b_t
+        c.font, c.alignment, c.border = font_black_bold, a_c, thin_border
 
         s_p, s_r, s_n = group['Pendientes'].sum(), group['Registrados'].sum(), group['No_Registrados'].sum()
         ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=3)
         c = ws.cell(row=current_row, column=1, value=f'TOTAL {spv_name}')
-        c.font, c.fill, c.alignment, c.border = f_b, fil_y, a_c, b_t
+        c.font, c.fill, c.alignment, c.border = font_black_bold, fil_y, a_c, thin_border
         
-        ws.cell(row=current_row, column=2).border = b_t
-        ws.cell(row=current_row, column=3).border = b_t
+        ws.cell(row=current_row, column=2).border = thin_border
+        ws.cell(row=current_row, column=3).border = thin_border
 
         for col, val in [(4, s_p), (5, s_r), (6, s_n)]:
             c = ws.cell(row=current_row, column=col, value=val)
-            c.font, c.fill, c.alignment, c.number_format, c.border = f_b, fil_y, a_c, '#,##0', b_t
+            c.font, c.fill, c.alignment, c.number_format, c.border = font_black_bold, fil_y, a_c, '#,##0', thin_border
 
         # PERCENTAGE RATE CELL ONLY IN RED (fil_main)
         c_sub_rate = ws.cell(row=current_row, column=7, value=s_r/s_p if s_p else 0)
-        c_sub_rate.font, c_sub_rate.fill, c_sub_rate.alignment, c_sub_rate.number_format, c_sub_rate.border = f_w, fil_main, a_c, '0.00%', b_t
+        c_sub_rate.font, c_sub_rate.fill, c_sub_rate.alignment, c_sub_rate.number_format, c_sub_rate.border = font_white_bold, fil_main, a_c, '0.00%', thin_border
             
         ws.row_dimensions[current_row].height = 34
         current_row += 1
