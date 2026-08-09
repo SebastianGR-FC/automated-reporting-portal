@@ -234,8 +234,6 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
     template_data = []
     for spv in unique_spvs:
         group = df_template_source[df_template_source['SPV'] == spv]
-        
-        # Parse column value cleanly for numeric comparisons
         group_vols = pd.to_numeric(group[vol_col], errors='coerce').fillna(0)
         
         template_data.append({
@@ -270,39 +268,41 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         
         font_family = 'Times New Roman'
         
-        blue_bg = workbook.add_format({'bg_color': '#5B9BD5', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 12})
-        purple_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'text_wrap': True, 'font_name': font_family, 'font_size': 12})
-        red_bg = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 12})
-        yellow_bg = workbook.add_format({'bg_color': '#FFFF00', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 12})
+        blue_bg = workbook.add_format({'bg_color': '#5B9BD5', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
+        purple_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'text_wrap': True, 'font_name': font_family, 'font_size': 13})
+        purple_date_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 24})
+        red_bg = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
+        yellow_bg = workbook.add_format({'bg_color': '#FFFF00', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
         
-        title_fmt = workbook.add_format({'bold': True, 'font_size': 15, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family})
-        sub_title_fmt = workbook.add_format({'bold': True, 'font_size': 13, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family})
-        time_badge_fmt = workbook.add_format({'bg_color': '#FFFF00', 'bold': True, 'italic': True, 'align': 'center', 'valign': 'vcenter', 'font_size': 14, 'font_name': font_family, 'border': 1})
+        title_fmt = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family})
+        sub_title_fmt = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family})
+        time_badge_fmt = workbook.add_format({'bg_color': '#FFFF00', 'bold': True, 'italic': True, 'align': 'center', 'valign': 'vcenter', 'font_size': 18, 'font_name': font_family, 'border': 1})
         
         data_fmt = workbook.add_format({'border': 1, 'align': 'left', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
         data_num_fmt = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
         
-        worksheet.set_column('A:A', 52)
-        worksheet.set_column('B:E', 22)
+        worksheet.set_column('A:A', 54)
+        worksheet.set_column('B:E', 24)
 
         worksheet.merge_range('B1:D1', 'TT SELLERS TO VISIT BASED ON THE # OF PACKAGES', title_fmt)
         worksheet.merge_range('B2:D2', '按包裹数量需拜访的TT卖家', sub_title_fmt)
         
         formatted_time = get_rounded_time_display()
         worksheet.merge_range('E1:E2', formatted_time, time_badge_fmt)
-        worksheet.set_row(0, 24)
-        worksheet.set_row(1, 24)
+        worksheet.set_row(0, 26)
+        worksheet.set_row(1, 26)
         
         worksheet.write(2, 0, 'SUPERVISOR', blue_bg)
         worksheet.write(2, 1, 'TOTAL TT SELLERS', purple_bg)
         worksheet.write(2, 2, '1-10', red_bg)
         worksheet.write(2, 3, '11-50', red_bg)
         worksheet.write(2, 4, '+50', red_bg)
-        worksheet.set_row(2, 30)
+        worksheet.set_row(2, 32)
         
-        worksheet.write(3, 0, '', purple_bg)
-        worksheet.merge_range(3, 1, 3, 4, report_date_str, purple_bg)
-        worksheet.set_row(3, 24)
+        # BOLD 24PT DATE IN ROW 4
+        worksheet.write(3, 0, '', purple_date_bg)
+        worksheet.merge_range(3, 1, 3, 4, report_date_str, purple_date_bg)
+        worksheet.set_row(3, 34)
         
         current_row = 4
         for _, row in df_template.iterrows():
@@ -310,11 +310,22 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
             row_format = yellow_bg if is_total_row else data_num_fmt
             str_format = yellow_bg if is_total_row else data_fmt
             
+            # Blank zero values on individual data rows (except Total)
+            v_tot = row['TOTAL TT SELLERS']
+            v_1_10 = row['1-10']
+            v_11_50 = row['11-50']
+            v_50 = row['+50']
+            
+            disp_tot = int(v_tot) if is_total_row or v_tot != 0 else ""
+            disp_1_10 = int(v_1_10) if is_total_row or v_1_10 != 0 else ""
+            disp_11_50 = int(v_11_50) if is_total_row or v_11_50 != 0 else ""
+            disp_50 = int(v_50) if is_total_row or v_50 != 0 else ""
+
             worksheet.write(current_row, 0, str(row['SUPERVISOR']), str_format)
-            worksheet.write(current_row, 1, int(row['TOTAL TT SELLERS']), row_format)
-            worksheet.write(current_row, 2, int(row['1-10']), row_format)
-            worksheet.write(current_row, 3, int(row['11-50']), row_format)
-            worksheet.write(current_row, 4, int(row['+50']), row_format)
+            worksheet.write(current_row, 1, disp_tot, row_format)
+            worksheet.write(current_row, 2, disp_1_10, row_format)
+            worksheet.write(current_row, 3, disp_11_50, row_format)
+            worksheet.write(current_row, 4, disp_50, row_format)
             worksheet.set_row(current_row, 22)
             current_row += 1
 
@@ -453,7 +464,8 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     base_size = 14
 
     title_format = workbook.add_format({'bold': True, 'font_size': 36, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': base_font})
-    subtitle_format = workbook.add_format({'bold': False, 'font_size': 16, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': base_font})
+    # BOLD 24PT DATE SUBTITLE
+    subtitle_format = workbook.add_format({'bold': True, 'font_size': 24, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': base_font})
     header_format = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
 
     grand_total_label = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'border': 1, 'font_name': base_font})
@@ -476,7 +488,7 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     worksheet.merge_range('A1:I1', 'AliExpress 拜访率 % Visitas AliExpress', title_format)
     worksheet.set_row(0, 80) 
     worksheet.merge_range('A2:I2', subtitle_str, subtitle_format)
-    worksheet.set_row(1, 32)
+    worksheet.set_row(1, 40)
 
     headers = ['SPV', 'ZONA', '客户归属网点\nPDV', 'SELLER', '待收取总数\nTOTAL a Recolectar', '已记录拜访\nVISITA REGISTRADA', '异常扫描已记录\nABNORMAL SCAN', '待收取包裹数\nPOR RECOLECTAR', '商家拜访率\nRATE %']
     for col, h in enumerate(headers): worksheet.write(2, col, h, header_format)
@@ -576,7 +588,9 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     months_en = {1: 'JAN', 2: 'FEB', 3: 'MAR', 4: 'APR', 5: 'MAY', 6: 'JUN', 7: 'JUL', 8: 'AUG', 9: 'SEP', 10: 'OCT', 11: 'NOV', 12: 'DEC'}
     months_es = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
     
-    title_date_str = f"缺失扫描报告 OMISIÓN DE ESCANEO\n揽收日期 {date_obj.month}月{date_obj.day}日 Fecha de Recoleccion: {months_es[date_obj.month]} {date_obj.day}"
+    # SEPARATED TITLE & SUBTITLE STRINGS FOR INDIVIDUAL MERGED ROWS
+    main_title_str = "缺失扫描报告 OMISIÓN DE ESCANEO"
+    subtitle_date_str = f"揽收日期 {date_obj.month}月{date_obj.day}日 Fecha de Recoleccion: {months_es[date_obj.month]} {date_obj.day}"
     output_filename = f"MISSING SCAN {months_en[date_obj.month]} {date_obj.day}.xlsx"
 
     val_cols = ['El número de pedidos de escaneo', 'No. de escaneo faltante de recolección', 'Nº de guías con escaneo faltantes de salida']
@@ -601,8 +615,9 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
         del wb['Report']
     ws = wb.create_sheet(title='Report', index=0)
 
-    # UPDATED FONT COLORS: White bold across total row headers
+    # EXACT TYPOGRAPHY SIZE REQUESTS: 36pt Title, 24pt Bold Subtitle, White Bold Totals
     font_title = Font(name='Calibri', size=36, bold=True, color='FFFFFF')
+    font_subtitle_24 = Font(name='Calibri', size=24, bold=True, color='FFFFFF')
     font_white_bold = Font(name='Calibri', size=14, bold=True, color='FFFFFF')
     font_black_bold = Font(name='Calibri', size=14, bold=True, color='000000')
     font_regular = Font(name='Calibri', size=14, bold=False, color='000000')
@@ -616,44 +631,55 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
     thin_border = Border(left=Side(style='thin', color='A6A6A6'), right=Side(style='thin', color='A6A6A6'), top=Side(style='thin', color='A6A6A6'), bottom=Side(style='thin', color='A6A6A6'))
 
-    # EXPANDED COLUMN WIDTHS TO PREVENT HEADER CROPPING
-    col_widths = {'A': 18, 'B': 22, 'C': 34, 'D': 22, 'E': 32, 'F': 32, 'G': 28, 'H': 32}
+    # EXPANDED COLUMN WIDTHS TO ELIMINATE CROPPING
+    col_widths = {'A': 22, 'B': 22, 'C': 38, 'D': 22, 'E': 36, 'F': 36, 'G': 30, 'H': 36}
     for col_letter, width in col_widths.items():
         ws.column_dimensions[col_letter].width = width
 
+    # ROW 1: 36PT TITLE
     ws.merge_cells('A1:H1')
     cell_title = ws['A1']
-    cell_title.value = title_date_str
+    cell_title.value = main_title_str
     cell_title.font = font_title
     cell_title.fill = fill_black
     cell_title.alignment = align_center
-    ws.row_dimensions[1].height = 85
+    ws.row_dimensions[1].height = 50
 
+    # ROW 2: 24PT BOLD DATE SUBTITLE
+    ws.merge_cells('A2:H2')
+    cell_sub = ws['A2']
+    cell_sub.value = subtitle_date_str
+    cell_sub.font = font_subtitle_24
+    cell_sub.fill = fill_black
+    cell_sub.alignment = align_center
+    ws.row_dimensions[2].height = 38
+
+    # ROW 3: TABLE HEADERS (NO CROPPING)
     headers = ['负责人\nSPV', '区域\nZONA', '揽收网点\nPDV', '总扫描数据量\nTOTAL A', '未进行入库扫描包裹件数\nSIN ESCANEO DE', '未进行入库扫描包裹的百分比\n% SIN ESCANEO DE', '未进行出库扫描的包裹\nSIN ESCANEO DE', '未进行出库扫描包裹的百分比\n% SIN ESCANEO DE']
     for col_num, h_text in enumerate(headers, 1):
-        c = ws.cell(row=2, column=col_num, value=h_text)
+        c = ws.cell(row=3, column=col_num, value=h_text)
         c.font = font_white_bold
         c.fill = fill_dark_grey
         c.alignment = align_center
         c.border = thin_border
-    ws.row_dimensions[2].height = 70
+    ws.row_dimensions[3].height = 75
 
+    # ROW 4: GRAND TOTAL
     gt_total = final_df['El número de pedidos de escaneo'].sum()
     gt_rec = final_df['No. de escaneo faltante de recolección'].sum()
     gt_rec_pct = gt_rec / gt_total if gt_total else 0
     gt_sal = final_df['Nº de guías con escaneo faltantes de salida'].sum()
     gt_sal_pct = gt_sal / gt_total if gt_total else 0
 
-    ws.merge_cells('A3:C3')
-    ws['A3'].value, ws['A3'].font, ws['A3'].fill, ws['A3'].alignment, ws['A3'].border = '总计', font_white_bold, fill_mid_grey, align_center, thin_border
+    ws.merge_cells('A4:C4')
+    ws['A4'].value, ws['A4'].font, ws['A4'].fill, ws['A4'].alignment, ws['A4'].border = '总计', font_white_bold, fill_mid_grey, align_center, thin_border
     
-    # GREEN TEXT REPLACED WITH FONT_WHITE_BOLD
     for col_idx, val, num_fmt, f_style, fill_style in [(4, gt_total, '#,##0', font_white_bold, fill_mid_grey), (5, gt_rec, '#,##0', font_white_bold, fill_mid_grey), (6, gt_rec_pct, '0.00%', font_white_bold, fill_red), (7, gt_sal, '#,##0', font_white_bold, fill_mid_grey), (8, gt_sal_pct, '0.00%', font_white_bold, fill_red)]:
-        c = ws.cell(row=3, column=col_idx, value=val)
+        c = ws.cell(row=4, column=col_idx, value=val)
         c.font, c.fill, c.alignment, c.number_format, c.border = f_style, fill_style, align_center, num_fmt, thin_border
-    ws.row_dimensions[3].height = 32
+    ws.row_dimensions[4].height = 32
 
-    current_row = 4
+    current_row = 5
     for spv_name, group in final_df.groupby('spv', sort=False):
         spv_start_row = current_row
         
@@ -805,7 +831,8 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     base_size = 14
     
     t_fmt = wb.add_format({'bold': True, 'font_size': 36, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font})
-    s_fmt = wb.add_format({'bold': False, 'font_size': 16, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font})
+    # BOLD 24PT DATE SUBTITLE
+    s_fmt = wb.add_format({'bold': True, 'font_size': 24, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font})
     h_fmt = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
     
     gt_l = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': light_purple, 'font_color': 'white', 'border': 1, 'font_name': base_font})
@@ -824,7 +851,7 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     ws.merge_range('A1:G1', 'R7 CDMX 所有平台的揽收率', t_fmt)
     ws.set_row(0, 80) 
     ws.merge_range('A2:G2', subtitle_str, s_fmt)
-    ws.set_row(1, 32)
+    ws.set_row(1, 38)
 
     headers = ['', 'ZONA', '客户归属网点\nPDV', '当日包裹总数\nTotal de Guias', '已收取的包裹\nGuias Recolectadas', '待收取的包裹\nGuias por Recolectar', '商家拜访率\nRate %']
     for col, h in enumerate(headers): ws.write(2, col, h, h_fmt)
@@ -960,6 +987,7 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
     f_w = Font(name='Calibri', size=14, bold=True, color='FFFFFF')
     f_b = Font(name='Calibri', size=14, bold=True, color='000000')
     f_r = Font(name='Calibri', size=14, bold=False, color='000000')
+    f_subtitle_24 = Font(name='Calibri', size=24, bold=True, color='FFFFFF')
     
     fil_main = PatternFill(start_color='C00000', end_color='C00000', fill_type='solid')
     fil_dark_grey = PatternFill(start_color='333333', end_color='333333', fill_type='solid')
@@ -973,11 +1001,12 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
 
     ws.merge_cells('A1:G1')
     ws['A1'].value, ws['A1'].font, ws['A1'].fill, ws['A1'].alignment = '问题件跟进 Seguimiento Paquetes de Anomalia', Font(name='Calibri', size=36, bold=True, color='FFFFFF'), fil_main, a_c
-    ws.row_dimensions[1].height = 80 
+    ws.row_dimensions[1].height = 50 
 
+    # BOLD 24PT DATE SUBTITLE
     ws.merge_cells('A2:G2')
-    ws['A2'].value, ws['A2'].font, ws['A2'].fill, ws['A2'].alignment = subtitle_str, Font(name='Calibri', size=16, bold=False, color='FFFFFF'), fil_main, a_c
-    ws.row_dimensions[2].height = 32
+    ws['A2'].value, ws['A2'].font, ws['A2'].fill, ws['A2'].alignment = subtitle_str, f_subtitle_24, fil_main, a_c
+    ws.row_dimensions[2].height = 38
 
     headers = ['', 'ZONA', '客户归属网点\nPDV', '未取件订单量合计\nPaquetes pendientes de Recoleccion', '已登记问题件量合计\nPaquetes de Anomalia Registrados', '未登记问题件量合计\nPaquetes de Anomalia NO Registrados', '问题件登记率\n% Registro de Paquetes de Anomalia']
     for col, h in enumerate(headers, 1):
@@ -1015,12 +1044,27 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
                 zona_start_row = c_row
 
             ws.cell(row=c_row, column=3, value=row['PDV']).alignment = a_c
-            for idx, k, fmt in [(4, 'Pendientes', '#,##0'), (5, 'Registrados', '#,##0'), (6, 'No_Registrados', '#,##0'), (7, 'Rate %', '0.00%')]:
-                c = ws.cell(row=c_row, column=idx, value=float(row[k]) if '%' in fmt else row[k])
-                c.number_format, c.alignment = fmt, a_c
+            
+            # BLANK ZERO VALUES FOR INDIVIDUAL PDV DATA ROWS
+            v_pend = row['Pendientes']
+            v_reg = row['Registrados']
+            v_noreg = row['No_Registrados']
+            
+            disp_pend = "" if v_pend == 0 else v_pend
+            disp_reg = "" if v_reg == 0 else v_reg
+            disp_noreg = "" if v_noreg == 0 else v_noreg
+            
+            ws.cell(row=c_row, column=4, value=disp_pend).number_format = '#,##0'
+            ws.cell(row=c_row, column=5, value=disp_reg).number_format = '#,##0'
+            ws.cell(row=c_row, column=6, value=disp_noreg).number_format = '#,##0'
+            
+            c_rate = ws.cell(row=c_row, column=7, value=float(row['Rate %']))
+            c_rate.number_format, c_rate.alignment = '0.00%', a_c
+
             for col_idx in [3, 4, 5, 6, 7]:
                 ws.cell(row=c_row, column=col_idx).font = f_r
                 ws.cell(row=c_row, column=col_idx).border = b_t
+                ws.cell(row=c_row, column=col_idx).alignment = a_c
             ws.row_dimensions[c_row].height = 24
             c_row += 1
 
