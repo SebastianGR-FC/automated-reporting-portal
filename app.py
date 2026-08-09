@@ -270,7 +270,10 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         
         blue_bg = workbook.add_format({'bg_color': '#5B9BD5', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
         purple_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'text_wrap': True, 'font_name': font_family, 'font_size': 13})
-        purple_date_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 24})
+        
+        # DATE FORMAT DECREASED TO 16PT BOLD
+        purple_date_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 16})
+        
         red_bg = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
         yellow_bg = workbook.add_format({'bg_color': '#FFFF00', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
         
@@ -299,10 +302,10 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         worksheet.write(2, 4, '+50', red_bg)
         worksheet.set_row(2, 32)
         
-        # BOLD 24PT DATE IN ROW 4
+        # BOLD 16PT DATE IN ROW 4
         worksheet.write(3, 0, '', purple_date_bg)
         worksheet.merge_range(3, 1, 3, 4, report_date_str, purple_date_bg)
-        worksheet.set_row(3, 34)
+        worksheet.set_row(3, 26)
         
         current_row = 4
         for _, row in df_template.iterrows():
@@ -588,7 +591,7 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     months_en = {1: 'JAN', 2: 'FEB', 3: 'MAR', 4: 'APR', 5: 'MAY', 6: 'JUN', 7: 'JUL', 8: 'AUG', 9: 'SEP', 10: 'OCT', 11: 'NOV', 12: 'DEC'}
     months_es = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
     
-    # SEPARATED TITLE & SUBTITLE STRINGS FOR INDIVIDUAL MERGED ROWS
+    # SEPARATED TITLE & SUBTITLE STRINGS
     main_title_str = "缺失扫描报告 OMISIÓN DE ESCANEO"
     subtitle_date_str = f"揽收日期 {date_obj.month}月{date_obj.day}日 Fecha de Recoleccion: {months_es[date_obj.month]} {date_obj.day}"
     output_filename = f"MISSING SCAN {months_en[date_obj.month]} {date_obj.day}.xlsx"
@@ -654,8 +657,17 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     cell_sub.alignment = align_center
     ws.row_dimensions[2].height = 38
 
-    # ROW 3: TABLE HEADERS (NO CROPPING)
-    headers = ['负责人\nSPV', '区域\nZONA', '揽收网点\nPDV', '总扫描数据量\nTOTAL A', '未进行入库扫描包裹件数\nSIN ESCANEO DE', '未进行入库扫描包裹的百分比\n% SIN ESCANEO DE', '未进行出库扫描的包裹\nSIN ESCANEO DE', '未进行出库扫描包裹的百分比\n% SIN ESCANEO DE']
+    # ROW 3: TABLE HEADERS (EXACT WORDING FROM REFERENCE IMAGE)
+    headers = [
+        '负责人\nSPV', 
+        '区域\nZONA', 
+        '揽收网点\nPDV', 
+        '总需扫描数量\nTOTAL A ESCANEAR', 
+        '未进行入库扫描的包裹\nSIN ESCANEO DE RECOLECCION', 
+        '未进行入库扫描包裹的百分比\n% SIN ESCANEO DE RECOLECCION', 
+        '未进行出库扫描的包裹\nSIN ESCANEO DE SALIDA', 
+        '未进行出库扫描包裹的百分比\n% SIN ESCANEO DE SALIDA'
+    ]
     for col_num, h_text in enumerate(headers, 1):
         c = ws.cell(row=3, column=col_num, value=h_text)
         c.font = font_white_bold
@@ -1014,36 +1026,40 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
         c.font, c.fill, c.alignment, c.border = f_w, fil_dark_grey, a_c, b_t
     ws.row_dimensions[3].height = 65
 
+    # GRAND TOTAL ROW: QUANTITIES IN DARK GREY, PERCENTAGE RATE ONLY IN RED
+    gt_p, gt_r, gt_n = df_report['Pendientes'].sum(), df_report['Registrados'].sum(), df_report['No_Registrados'].sum()
+    
     ws.merge_cells('A4:C4')
     ws['A4'].value, ws['A4'].font, ws['A4'].fill, ws['A4'].alignment, ws['A4'].border = 'GRAND TOTAL 总计', f_w, fil_dark_grey, a_c, b_t
 
-    gt_p, gt_r, gt_n = df_report['Pendientes'].sum(), df_report['Registrados'].sum(), df_report['No_Registrados'].sum()
     for i, val in enumerate([gt_p, gt_r, gt_n], start=4):
         c = ws.cell(row=4, column=i, value=val)
         c.font, c.fill, c.alignment, c.number_format, c.border = f_w, fil_dark_grey, a_c, '#,##0', b_t
-    c = ws.cell(row=4, column=7, value=gt_r/gt_p if gt_p else 0)
-    c.font, c.fill, c.alignment, c.number_format, c.border = f_w, fil_dark_grey, a_c, '0.00%', b_t
+        
+    # PERCENTAGE CELL HIGHLIGHTED RED (fil_main)
+    c_gt_rate = ws.cell(row=4, column=7, value=gt_r/gt_p if gt_p else 0)
+    c_gt_rate.font, c_gt_rate.fill, c_gt_rate.alignment, c_gt_rate.number_format, c_gt_rate.border = f_w, fil_main, a_c, '0.00%', b_t
     ws.row_dimensions[4].height = 34
 
-    c_row = 5
+    current_row = 5
     for spv_name, group in df_report.groupby('SPV', sort=False):
-        spv_start_row = c_row
+        spv_start_row = current_row
         
-        zona_start_row = c_row
+        zona_start_row = current_row
         current_zona = None
 
         for _, row in group.iterrows():
-            ws.cell(row=c_row, column=2, value=row['ZONA']).alignment = a_c
-            ws.cell(row=c_row, column=2).font = f_r
-            ws.cell(row=c_row, column=2).border = b_t
+            ws.cell(row=current_row, column=2, value=row['ZONA']).alignment = a_c
+            ws.cell(row=current_row, column=2).border = thin_border
+            ws.cell(row=current_row, column=2).font = font_regular
             
             if current_zona != row['ZONA']:
-                if current_zona is not None and c_row - 1 > zona_start_row:
-                    ws.merge_cells(start_row=zona_start_row, start_column=2, end_row=c_row - 1, end_column=2)
+                if current_zona is not None and current_row - 1 > zona_start_row:
+                    ws.merge_cells(start_row=zona_start_row, start_column=2, end_row=current_row - 1, end_column=2)
                 current_zona = row['ZONA']
-                zona_start_row = c_row
+                zona_start_row = current_row
 
-            ws.cell(row=c_row, column=3, value=row['PDV']).alignment = a_c
+            ws.cell(row=current_row, column=3, value=row['PDV']).alignment = a_c
             
             # BLANK ZERO VALUES FOR INDIVIDUAL PDV DATA ROWS
             v_pend = row['Pendientes']
@@ -1054,47 +1070,47 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
             disp_reg = "" if v_reg == 0 else v_reg
             disp_noreg = "" if v_noreg == 0 else v_noreg
             
-            ws.cell(row=c_row, column=4, value=disp_pend).number_format = '#,##0'
-            ws.cell(row=c_row, column=5, value=disp_reg).number_format = '#,##0'
-            ws.cell(row=c_row, column=6, value=disp_noreg).number_format = '#,##0'
+            ws.cell(row=current_row, column=4, value=disp_pend).number_format = '#,##0'
+            ws.cell(row=current_row, column=5, value=disp_reg).number_format = '#,##0'
+            ws.cell(row=current_row, column=6, value=disp_noreg).number_format = '#,##0'
             
-            c_rate = ws.cell(row=c_row, column=7, value=float(row['Rate %']))
+            c_rate = ws.cell(row=current_row, column=7, value=float(row['Rate %']))
             c_rate.number_format, c_rate.alignment = '0.00%', a_c
 
             for col_idx in [3, 4, 5, 6, 7]:
-                ws.cell(row=c_row, column=col_idx).font = f_r
-                ws.cell(row=c_row, column=col_idx).border = b_t
-                ws.cell(row=c_row, column=col_idx).alignment = a_c
-            ws.row_dimensions[c_row].height = 24
-            c_row += 1
+                ws.cell(row=current_row, column=col_idx).font = font_regular
+                ws.cell(row=current_row, column=col_idx).border = thin_border
+                ws.cell(row=current_row, column=col_idx).alignment = a_c
+            ws.row_dimensions[current_row].height = 24
+            current_row += 1
 
-        if current_zona is not None and c_row - 1 > zona_start_row:
-            ws.merge_cells(start_row=zona_start_row, start_column=2, end_row=c_row - 1, end_column=2)
+        if current_zona is not None and current_row - 1 > zona_start_row:
+            ws.merge_cells(start_row=zona_start_row, start_column=2, end_row=current_row - 1, end_column=2)
 
-        if c_row - 1 > spv_start_row: 
-            ws.merge_cells(start_row=spv_start_row, start_column=1, end_row=c_row - 1, end_column=1)
+        if current_row - 1 > spv_start_row: 
+            ws.merge_cells(start_row=spv_start_row, start_column=1, end_row=current_row - 1, end_column=1)
             
         c = ws.cell(row=spv_start_row, column=1, value=spv_name)
         c.font, c.alignment, c.border = f_b, a_c, b_t
 
         s_p, s_r, s_n = group['Pendientes'].sum(), group['Registrados'].sum(), group['No_Registrados'].sum()
-        ws.merge_cells(start_row=c_row, start_column=1, end_row=c_row, end_column=3)
-        c = ws.cell(row=c_row, column=1, value=f'TOTAL {spv_name}')
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=3)
+        c = ws.cell(row=current_row, column=1, value=f'TOTAL {spv_name}')
         c.font, c.fill, c.alignment, c.border = f_b, fil_y, a_c, b_t
         
-        ws.cell(row=c_row, column=2).border = b_t
-        ws.cell(row=c_row, column=3).border = b_t
+        ws.cell(row=current_row, column=2).border = b_t
+        ws.cell(row=current_row, column=3).border = b_t
 
-        for col, val in [(4, s_p), (5, s_r)]:
-            c = ws.cell(row=c_row, column=col, value=val)
+        for col, val in [(4, s_p), (5, s_r), (6, s_n)]:
+            c = ws.cell(row=current_row, column=col, value=val)
             c.font, c.fill, c.alignment, c.number_format, c.border = f_b, fil_y, a_c, '#,##0', b_t
 
-        for col, val, fmt in [(6, s_n, '#,##0'), (7, s_r/s_p if s_p else 0, '0.00%')]:
-            c = ws.cell(row=c_row, column=col, value=val)
-            c.font, c.fill, c.alignment, c.number_format, c.border = f_w, fil_main, a_c, fmt, b_t
+        # PERCENTAGE RATE CELL ONLY IN RED (fil_main)
+        c_sub_rate = ws.cell(row=current_row, column=7, value=s_r/s_p if s_p else 0)
+        c_sub_rate.font, c_sub_rate.fill, c_sub_rate.alignment, c_sub_rate.number_format, c_sub_rate.border = f_w, fil_main, a_c, '0.00%', b_t
             
-        ws.row_dimensions[c_row].height = 34
-        c_row += 1
+        ws.row_dimensions[current_row].height = 34
+        current_row += 1
 
     output = io.BytesIO()
     wb.save(output)
