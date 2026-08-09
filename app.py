@@ -271,13 +271,13 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         blue_bg = workbook.add_format({'bg_color': '#5B9BD5', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
         purple_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'text_wrap': True, 'font_name': font_family, 'font_size': 13})
         
-        # DATE FORMAT DECREASED TO 14PT BOLD
-        purple_date_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 14})
+        # DATE FORMAT DECREASED TO 16PT BOLD
+        purple_date_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 16})
         
         red_bg = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
         yellow_bg = workbook.add_format({'bg_color': '#FFFF00', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
         
-        title_fmt = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family})
+        title_fmt = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family})
         sub_title_fmt = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family})
         time_badge_fmt = workbook.add_format({'bg_color': '#FFFF00', 'bold': True, 'italic': True, 'align': 'center', 'valign': 'vcenter', 'font_size': 18, 'font_name': font_family, 'border': 1})
         
@@ -302,7 +302,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         worksheet.write(2, 4, '+50', red_bg)
         worksheet.set_row(2, 32)
         
-        # BOLD 14PT DATE IN ROW 4
+        # BOLD 16PT DATE IN ROW 4
         worksheet.write(3, 0, '', purple_date_bg)
         worksheet.merge_range(3, 1, 3, 4, report_date_str, purple_date_bg)
         worksheet.set_row(3, 26)
@@ -1036,7 +1036,7 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
         c = ws.cell(row=4, column=i, value=val)
         c.font, c.fill, c.alignment, c.number_format, c.border = f_w, fil_dark_grey, a_c, '#,##0', b_t
         
-    # PERCENTAGE CELL HIGHLIGHTED RED (fil_main)
+    # PERCENTAGE CELL HIGHLIGHTED RED (fil_main) ONLY
     c_gt_rate = ws.cell(row=4, column=7, value=gt_r/gt_p if gt_p else 0)
     c_gt_rate.font, c_gt_rate.fill, c_gt_rate.alignment, c_gt_rate.number_format, c_gt_rate.border = f_w, fil_main, a_c, '0.00%', b_t
     ws.row_dimensions[4].height = 34
@@ -1050,7 +1050,7 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
 
         for _, row in group.iterrows():
             ws.cell(row=current_row, column=2, value=row['ZONA']).alignment = a_c
-            ws.cell(row=current_row, column=2).border = thin_border
+            ws.cell(row=current_row, column=2).border = b_t
             ws.cell(row=current_row, column=2).font = font_regular
             
             if current_zona != row['ZONA']:
@@ -1079,7 +1079,7 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
 
             for col_idx in [3, 4, 5, 6, 7]:
                 ws.cell(row=current_row, column=col_idx).font = font_regular
-                ws.cell(row=current_row, column=col_idx).border = thin_border
+                ws.cell(row=current_row, column=col_idx).border = b_t
                 ws.cell(row=current_row, column=col_idx).alignment = a_c
             ws.row_dimensions[current_row].height = 24
             current_row += 1
