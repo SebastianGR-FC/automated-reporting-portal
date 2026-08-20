@@ -26,8 +26,7 @@ st.markdown(hide_streamlit_branding, unsafe_allow_html=True)
 
 
 # ==============================================================================
-# GLOBAL CONSTANTS (single source of truth - avoids copy/paste drift between
-# report functions, which was the root cause of several of the date bugs)
+# GLOBAL CONSTANTS
 # ==============================================================================
 MONTHS_ES = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
              7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
@@ -40,10 +39,6 @@ MONTHS_EN_CAPS = {k: v.upper() for k, v in MONTHS_EN_ABBR.items()}
 # SECURITY: Password Authentication
 # ==============================================================================
 def _get_correct_password():
-    # Prefer a Streamlit secret (st.secrets) if one has been configured, so the
-    # password isn't sitting in plaintext in the public source file. Falls back
-    # to the original hardcoded password so existing deployments keep working
-    # without any extra setup.
     try:
         return st.secrets["APP_PASSWORD"]
     except Exception:
@@ -99,14 +94,6 @@ def get_rounded_time_display():
 
 
 def get_checkpoint_time_label(target_hour):
-    """
-    BUG FIX: the TikTok report badge used to always show the *current* wall-clock
-    time, rounded to the nearest half hour - regardless of which checkpoint
-    (9 AM / 12 PM / 3 PM / 5 PM) was actually being processed. If someone ran the
-    9 AM checkpoint a little late, the badge could say "9:47 AM" or even
-    mismatch the hour entirely, which is confusing on an executive-facing report.
-    Now the badge reflects the checkpoint that was actually detected/processed.
-    """
     mapping = {9: "9:00 AM", 12: "12:00 PM", 3: "3:00 PM", 5: "5:00 PM"}
     return mapping.get(target_hour, get_rounded_time_display())
 
@@ -142,26 +129,10 @@ def clean_spv_df(spv_file_bytes):
 
 
 def is_valid_spv(spv_name):
-    """
-    BUG FIX: previously used `'CEDIS' not in spv_name.upper()`, a *substring*
-    match. That would silently exclude any real supervisor whose name merely
-    contained the word CEDIS anywhere (e.g. a zone called "CEDIS NORTE"),
-    dropping all of their volume from every report. Now it's an exact match
-    against the CEDIS placeholder only.
-    """
     return str(spv_name).strip().upper() != 'CEDIS'
 
 
 def get_order_date_range(date_series):
-    """
-    Returns (min_date, max_date) covering the FULL range of valid dates present
-    in a column - not just the single most common date. This is the fix for the
-    core reported bug: when raw data spans more than one order day (e.g. a
-    weekend batch collected Monday: orders placed Sat + Sun), the report must
-    reflect the *entire* range, not just one of the two days.
-    Also defensive: uses errors='coerce' so a handful of malformed date cells
-    don't crash the whole report.
-    """
     parsed = pd.to_datetime(date_series, errors='coerce').dt.date
     valid_dates = sorted(parsed.dropna().unique())
     if not valid_dates:
@@ -190,11 +161,6 @@ def format_date_range(min_date, max_date):
 
 
 def _display_width(text):
-    """
-    Rough visual-width estimate that counts CJK characters as double width
-    (they render roughly 2x as wide as Latin characters in the same point
-    size). Used to decide whether a title/subtitle row needs extra height.
-    """
     width = 0
     for ch in text:
         if '\u4e00' <= ch <= '\u9fff':
@@ -205,17 +171,6 @@ def _display_width(text):
 
 
 def dynamic_subtitle_height(text, chars_per_line=95, base_height=40, line_height=30, max_lines=3):
-    """
-    BUG FIX ("text gets cut out"): subtitle rows (dates, mixed Chinese/Spanish)
-    had a fixed row height and, in some reports, no text-wrap enabled. Once a
-    subtitle line got long enough (which happens more often now that date
-    ranges can show two days, e.g. "Pedidos: Aug 9-10 | Reco: Aug 11"), Excel
-    either clipped the text at the merged-cell boundary (no wrap) or wrapped it
-    but the fixed row height was too short to show the second line (wrap
-    without enough height). This estimates how many lines the text will need
-    for the merged range's width and returns a row height that comfortably
-    fits it.
-    """
     width = _display_width(text)
     lines = max(1, -(-width // chars_per_line))  # ceil division
     lines = min(lines, max_lines)
@@ -245,13 +200,6 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
     df_sup = clean_spv_df(spv_file_bytes)
     df_sup.rename(columns={'SPV': 'SUPERVISOR'}, inplace=True)
 
-    # BUG FIX: the merge below used to match 'Punto de Recogida' to 'PDV' with
-    # only whitespace-trimming applied (no case normalization), while every
-    # other report in this app matches PDVs case-insensitively. Any casing
-    # mismatch between the two files (e.g. "cedis norte" vs "CEDIS NORTE")
-    # silently failed to match and the seller got dumped into '#N/A', even
-    # though a human would consider it an obvious match. Now this merge is
-    # case-insensitive like the rest of the app.
     if 'PDV' in df_sup.columns:
         df_sup['PDV'] = df_sup['PDV'].astype(str).str.strip()
     df_sup['PDV_lower'] = df_sup['PDV'].astype(str).str.strip().str.lower()
@@ -276,9 +224,6 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
     # 3. DYNAMIC DATE EXTRACTION & +1 DAY SHIFT
     report_date_str = "N/A"
     if 'Tiempo de registro de la orden' in df_raw.columns:
-        # BUG FIX: previously this called pd.to_datetime WITHOUT errors='coerce'.
-        # A single malformed timestamp anywhere in the sheet would raise and
-        # crash the whole report. Now bad values are safely dropped instead.
         dates = pd.to_datetime(df_raw['Tiempo de registro de la orden'], errors='coerce').dt.date
         valid_dates = dates.dropna()
         if not valid_dates.empty:
@@ -429,8 +374,6 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         worksheet.merge_range('B1:D1', 'TT SELLERS TO VISIT BASED ON THE # OF PACKAGES', title_fmt)
         worksheet.merge_range('B2:D2', '按包裹数量需拜访的TT卖家', sub_title_fmt)
 
-        # BUG FIX: badge used to show the raw current time (could drift from the
-        # checkpoint actually being processed); now shows the checkpoint label.
         formatted_time = get_checkpoint_time_label(target_hour)
         worksheet.merge_range('E1:E2', formatted_time, time_badge_fmt)
         worksheet.set_row(0, 30)
@@ -443,7 +386,6 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         worksheet.write(2, 4, '+50', red_bg)
         worksheet.set_row(2, 34)
 
-        # BOLD 14PT DATE IN ROW 4
         worksheet.write(3, 0, '', purple_date_bg)
         worksheet.merge_range(3, 1, 3, 4, report_date_str, purple_date_bg)
         worksheet.set_row(3, 26)
@@ -529,11 +471,6 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     if 'Estado de la orden' in df_raw.columns:
         df_raw = df_raw[df_raw['Estado de la orden'] != 'Cancelado']
 
-    # BUG FIX: this report used to count every ROW per seller, but raw exports
-    # can contain multiple rows for the same tracking number (status history).
-    # That silently inflated Total/Abnormal/PorRec counts. TikTok's report
-    # already de-duplicates on tracking number - this brings AliExpress in
-    # line with that same safeguard.
     if 'Guía de Rastreo' in df_raw.columns:
         df_raw = df_raw.drop_duplicates(subset=['Guía de Rastreo'], keep='last').copy()
 
@@ -575,14 +512,6 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     df_report['Abnormal_View'] = df_report['Abnormal'].apply(lambda x: '' if x == 0 else int(x))
     df_report['PorRec_View'] = df_report['PorRec'].apply(lambda x: '' if x == 0 else int(x))
 
-    # BUG FIX (the core reported bug): date detection used to pick only the
-    # single MOST FREQUENT order date via value_counts().idxmax(), and only
-    # handled a second day via a brittle "if the pickup day is a Monday"
-    # special case that guessed the second day was "yesterday" rather than
-    # looking at what dates were actually present. If your data spanned e.g.
-    # Pedidos Aug 9-10 -> Reco Aug 11, it could easily drop one of the two
-    # order dates from the title entirely. Now it uses the true min/max date
-    # range found in the data, exactly like the R7 CDMX report already did.
     if 'Tiempo de registro de la orden' in df_raw.columns:
         o_min, o_max = get_order_date_range(df_raw['Tiempo de registro de la orden'])
     else:
@@ -638,8 +567,6 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     worksheet.merge_range('A1:I1', 'AliExpress 拜访率 % Visitas AliExpress', title_format)
     worksheet.set_row(0, 80)
     worksheet.merge_range('A2:I2', subtitle_str, subtitle_format)
-    # BUG FIX: fixed height of 40 could clip a long, two-day subtitle. Height
-    # is now computed from the actual subtitle text length.
     worksheet.set_row(1, dynamic_subtitle_height(subtitle_str, chars_per_line=115, base_height=40))
 
     headers = ['SPV', 'ZONA', '客户归属网点\nPDV', 'SELLER', '待收取总数\nTOTAL a Recolectar', '已记录拜访\nVISITA REGISTRADA', '异常扫描已记录\nABNORMAL SCAN', '待收取包裹数\nPOR RECOLECTAR', '商家拜访率\nRATE %']
@@ -735,8 +662,6 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
         df_raw = pd.read_excel(io.BytesIO(raw_file_bytes), sheet_name=0, engine='openpyxl')
     df_raw.columns = df_raw.columns.str.strip()
 
-    # BUG FIX: guard against a missing/empty date column, which previously
-    # raised an unhandled IndexError and crashed the whole report.
     if 'Fecha de estadísticas' in df_raw.columns and not df_raw['Fecha de estadísticas'].dropna().empty:
         raw_date = df_raw['Fecha de estadísticas'].dropna().iloc[0]
         date_obj = pd.to_datetime(raw_date, errors='coerce')
@@ -810,8 +735,6 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     cell_sub.font = font_subtitle_24
     cell_sub.fill = fill_black
     cell_sub.alignment = align_center
-    # BUG FIX: row height was a fixed 38, too short once the wrapped text
-    # needed a second line - the second line was invisible/clipped.
     ws.row_dimensions[2].height = dynamic_subtitle_height(subtitle_date_str, chars_per_line=108, base_height=38)
 
     # ROW 3: TABLE HEADERS (EXACT WORDING FROM REFERENCE IMAGE)
@@ -943,15 +866,9 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     df_raw['PDV_lower'] = df_raw['NORMAL_PDV'].str.lower()
     df_raw['Estado_lower'] = df_raw['Estado de la orden'].astype(str).str.strip().str.lower()
 
-    # BUG FIX: same duplicate-tracking-number risk as AliExpress - this report
-    # counted raw ROWS per PDV rather than unique packages. If the export has
-    # more than one row per tracking number (status history), volumes get
-    # inflated. De-duplicate first, consistent with the other reports.
     if 'Guía de Rastreo' in df_raw.columns:
         df_raw = df_raw.drop_duplicates(subset=['Guía de Rastreo'], keep='last').copy()
 
-    # BUG FIX: replaced the old idxmax()/"is it a Monday" special case with the
-    # same robust min/max date-range logic used everywhere else in this file.
     if 'Tiempo de registro de la orden' in df_raw.columns:
         o_min, o_max = get_order_date_range(df_raw['Tiempo de registro de la orden'])
     else:
@@ -996,8 +913,7 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     base_size = 14
 
     t_fmt = wb.add_format({'bold': True, 'font_size': 36, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font, 'text_wrap': True})
-    # BOLD 24PT DATE SUBTITLE - text_wrap so long date ranges wrap instead of
-    # being clipped by the merged-cell boundary.
+
     s_fmt = wb.add_format({'bold': True, 'font_size': 24, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font, 'text_wrap': True})
     h_fmt = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
 
@@ -1017,7 +933,7 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     ws.merge_range('A1:G1', 'R7 CDMX 所有平台的揽收率', t_fmt)
     ws.set_row(0, 80)
     ws.merge_range('A2:G2', subtitle_str, s_fmt)
-    # BUG FIX: fixed height of 38 could clip a long, multi-day subtitle.
+
     ws.set_row(1, dynamic_subtitle_height(subtitle_str, chars_per_line=80, base_height=38))
 
     headers = ['', 'ZONA', '客户归属网点\nPDV', '当日包裹总数\nTotal de Guias', '已收取的包裹\nGuias Recolectadas', '待收取的包裹\nGuias por Recolectar', '商家拜访率\nRate %']
@@ -1109,10 +1025,6 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
     order_col = [c for c in df_raw.columns if '订单日期' in c]
     reco_col = [c for c in df_raw.columns if '考核' in c or '收件' in c]
 
-    # BUG FIX: previously only ever displayed the single LATEST order date
-    # (unique_order[-1]), so a batch spanning multiple order days would show
-    # an incomplete/misleading date in the title - the same class of bug as
-    # AliExpress. Now shows the full min-max range, like the other reports.
     if order_col:
         o_min, o_max = get_order_date_range(df_raw[order_col[0]])
     else:
@@ -1128,9 +1040,6 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
 
     subtitle_str = f"订单日期： {pedidos_zh}, 收件日期 {reco_zh} Pedidos: {pedidos_es} | Reco: {reco_es}"
 
-    # BUG FIX: `raw_filename.split('.')[0]` truncates at the FIRST dot, so a
-    # name like "report.v2.xlsx" incorrectly became "report.xlsx" instead of
-    # "report.v2.xlsx". os.path.splitext only splits on the final extension.
     base_name, ext = os.path.splitext(raw_filename)
     output_filename = raw_filename if ext.lower() == '.xlsx' else f"{base_name}.xlsx"
 
@@ -1178,7 +1087,6 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
     # BOLD 24PT DATE SUBTITLE
     ws.merge_cells('A2:G2')
     ws['A2'].value, ws['A2'].font, ws['A2'].fill, ws['A2'].alignment = subtitle_str, font_subtitle_24, fil_main, a_c
-    # BUG FIX: fixed height of 38 could clip a long, multi-day subtitle.
     ws.row_dimensions[2].height = dynamic_subtitle_height(subtitle_str, chars_per_line=95, base_height=38)
 
     headers = ['', 'ZONA', '客户归属网点\nPDV', '未取件订单量合计\nPaquetes pendientes de Recoleccion', '已登记问题件量合计\nPaquetes de Anomalia Registrados', '未登记问题件量合计\nPaquetes de Anomalia NO Registrados', '问题件登记率\n% Registro de Paquetes de Anomalia']
