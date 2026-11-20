@@ -31,7 +31,7 @@ st.markdown(hide_streamlit_branding, unsafe_allow_html=True)
 MONTHS_ES = {1: 'Ene', 2: 'Feb', 3: 'Mar', 4: 'Abr', 5: 'May', 6: 'Jun',
              7: 'Jul', 8: 'Ago', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dic'}
 MONTHS_EN_ABBR = {1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun',
-                   7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'}
+                  7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'}
 MONTHS_EN_CAPS = {k: v.upper() for k, v in MONTHS_EN_ABBR.items()}
 
 
@@ -113,7 +113,7 @@ def clean_spv_df(spv_file_bytes):
     Standardizes the SUPERVISORES mapping file to ensure SPV, ZONA, and PDV columns
     are universally correctly cased and formatted to prevent KeyErrors.
     """
-    df_spv = pd.read_excel(io.BytesIO(spv_file_bytes))
+    df_spv = pd.read_excel(io.BytesIO(spv_file_bytes), keep_default_na=False)
     df_spv.columns = [str(c).strip().upper() for c in df_spv.columns]
 
     if 'SUPERVISOR' in df_spv.columns and 'SPV' not in df_spv.columns:
@@ -125,11 +125,13 @@ def clean_spv_df(spv_file_bytes):
     if 'PDV' not in df_spv.columns:
         df_spv['PDV'] = ''
 
+    df_spv = df_spv[df_spv['SPV'].astype(str).str.strip() != '']
+
     return df_spv
 
 
 def is_valid_spv(spv_name):
-    return str(spv_name).strip().upper() != 'CEDIS'
+    return str(spv_name).strip().upper() != 'CEDIS' and str(spv_name).strip() != ''
 
 
 def get_order_date_range(date_series):
@@ -172,7 +174,7 @@ def _display_width(text):
 
 def dynamic_subtitle_height(text, chars_per_line=95, base_height=40, line_height=30, max_lines=3):
     width = _display_width(text)
-    lines = max(1, -(-width // chars_per_line))  # ceil division
+    lines = max(1, -(-width // chars_per_line))
     lines = min(lines, max_lines)
     if lines <= 1:
         return base_height
@@ -184,17 +186,17 @@ def dynamic_subtitle_height(text, chars_per_line=95, base_height=40, line_height
 # ==============================================================================
 
 def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
-    # 1. SAFELY LOAD DATA INTO MEMORY
+    # 1. SAFELY LOAD DATA INTO MEMORY (keep_default_na=False avoids NA seller bug)
     xls_raw = pd.ExcelFile(io.BytesIO(raw_file_bytes))
     original_sheet_name = '订单综合信息' if '订单综合信息' in xls_raw.sheet_names else xls_raw.sheet_names[0]
-    df_raw = pd.read_excel(xls_raw, sheet_name=original_sheet_name)
+    df_raw = pd.read_excel(xls_raw, sheet_name=original_sheet_name, keep_default_na=False)
 
     # Clean redundant calculated columns from previous runs if present in raw data sheet
     for col in ['SPV', 'SLR']:
         if col in df_raw.columns:
             df_raw = df_raw.drop(columns=[col])
 
-    df_raw_copy = df_raw.copy()  # Preserve original raw data to write back
+    df_raw_copy = df_raw.copy()
 
     # Load supervisor mapping file
     df_sup = clean_spv_df(spv_file_bytes)
@@ -210,7 +212,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
 
     # 2. AUTOMATIC TARGET HOUR DETECTION FROM 'TABLA' SHEET
     try:
-        df_tabla = pd.read_excel(xls_raw, sheet_name='TABLA')
+        df_tabla = pd.read_excel(xls_raw, sheet_name='TABLA', keep_default_na=False)
         existing_cols = [str(c).strip() for c in df_tabla.columns]
 
         if '9' not in existing_cols: target_hour = 9
@@ -229,32 +231,28 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         if not valid_dates.empty:
             o_date = valid_dates.value_counts().idxmax()
 
-            # Add 1 day to date for pickup day representation
             target_reco_date = o_date + datetime.timedelta(days=1)
             report_date_str = f"{target_reco_date.day:02d}-{MONTHS_EN_ABBR[target_reco_date.month]}"
 
-            # Filter dataset strictly to orders from the order date
             df_raw = df_raw[dates == o_date].copy()
 
     # 4. DATA CLEANING & MERGING
     df_raw['SLR'] = df_raw['Compañía remitente'].astype(str).apply(
         lambda x: str(x).split('|')[-1].strip() if '|' in str(x) else str(x).strip()
     )
+    df_raw['SLR'] = df_raw['SLR'].replace(['', 'nan', 'NaN', 'None'], 'SIN NOMBRE')
 
     df_raw = pd.merge(df_raw, df_sup[['PDV_lower', 'SUPERVISOR']], on='PDV_lower', how='left')
     df_raw.rename(columns={'SUPERVISOR': 'SPV'}, inplace=True)
 
-    # Explicitly consolidate CEDIS / NaNs / Empty into '#N/A'
     df_raw['SPV'] = df_raw['SPV'].apply(clean_spv_value)
 
-    # Filter out both "CANCELADO" and "EN RECEPCIÓN"
     if 'Estado de la orden' in df_raw.columns:
         df_raw['Estado_upper'] = df_raw['Estado de la orden'].astype(str).str.upper().str.strip()
         df_valid = df_raw[~df_raw['Estado_upper'].isin(['CANCELADO', 'EN RECEPCIÓN', 'EN RECEPCION'])]
     else:
         df_valid = df_raw.copy()
 
-    # Remove duplicate tracking numbers to prevent inflation of package counts
     if 'Guía de Rastreo' in df_valid.columns:
         df_valid = df_valid.drop_duplicates(subset=['Guía de Rastreo']).copy()
 
@@ -280,8 +278,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         df_tabla = pd.merge(df_tabla, df_current_counts, on='SLR', how='left')
         df_tabla['SPV'] = df_tabla['SPV'].apply(clean_spv_value)
 
-        # 0s in time slots 12, 3, 5 mean all packages collected -> converted to '#N/A'
-        df_tabla[time_col] = df_tabla[time_col].apply(lambda x: '#N/A' if pd.isna(x) or x == 0 else int(x))
+        df_tabla[time_col] = df_tabla[time_col].apply(lambda x: '#N/A' if pd.isna(x) or x == 0 or x == '' else int(x))
 
         if '9' in df_tabla.columns:
             def calculate_formula(row):
@@ -299,11 +296,9 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         else:
             raise ValueError("Error: Columna '9' no encontrada en la hoja TABLA. Procesa primero las 9 AM.")
 
-        # Filter for sellers where formula results in 0
         df_template_source = df_tabla[df_tabla['FORMULA'].astype(str) == '0'].copy()
         vol_col = time_col
 
-    # REORDER TABLA COLUMNS: SPV -> PDV -> SLR -> hours (9, 12, 3, 5, FORMULA, etc.)
     desired_order = ['SPV', 'PDV', 'SLR']
     other_columns = [col for col in df_tabla.columns if col not in desired_order]
     final_tabla_columns = [col for col in desired_order if col in df_tabla.columns] + other_columns
@@ -354,10 +349,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
 
         blue_bg = workbook.add_format({'bg_color': '#5B9BD5', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
         purple_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'text_wrap': True, 'font_name': font_family, 'font_size': 13})
-
-        # DATE FORMAT SET TO 14PT BOLD
         purple_date_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 14})
-
         red_bg = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
         yellow_bg = workbook.add_format({'bg_color': '#FFFF00', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
 
@@ -396,7 +388,6 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
             row_format = yellow_bg if is_total_row else data_num_fmt
             str_format = yellow_bg if is_total_row else data_fmt
 
-            # Blank zero values on individual data rows (except Total)
             v_tot = row['TOTAL TT SELLERS']
             v_1_10 = row['1-10']
             v_11_50 = row['11-50']
@@ -432,7 +423,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
             worksheet_tabla.set_column(col_num, col_num, max(max_len, 14), tabla_data)
         worksheet_tabla.set_row(0, 26)
 
-        # --- Sheet 3: ORIGINAL RAW DATA (AUTO-STRETCHED COLUMNS) ---
+        # --- Sheet 3: ORIGINAL RAW DATA ---
         df_raw_copy.to_excel(writer, sheet_name=original_sheet_name, index=False)
         worksheet_raw = writer.sheets[original_sheet_name]
         worksheet_raw.hide_gridlines(0)
@@ -448,7 +439,11 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
             worksheet_raw.set_column(col_num, col_num, max(max_len, 12), raw_data_fmt)
         worksheet_raw.set_row(0, 24)
 
-    output_filename = "TIKTOK PENDING FROM YESTERDAY.xlsx"
+    # Fecha actual en zona horaria CDMX (UTC-6) + corte horario (9, 12, 3, 5)
+    cdmx_tz = datetime.timezone(datetime.timedelta(hours=-6))
+    now_cdmx = datetime.datetime.now(cdmx_tz)
+    today_str = f"{MONTHS_EN_CAPS[now_cdmx.month]} {now_cdmx.day}"
+    output_filename = f"TIKTOK PENDING FROM YESTERDAY {today_str} AT {target_hour}.xlsx"
     return output_buffer.getvalue(), output_filename
 
 
@@ -461,9 +456,9 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     try:
         xls = pd.ExcelFile(io.BytesIO(raw_file_bytes))
         original_sheet_name = '订单综合信息' if '订单综合信息' in xls.sheet_names else xls.sheet_names[0]
-        df_raw = pd.read_excel(xls, sheet_name=original_sheet_name)
+        df_raw = pd.read_excel(xls, sheet_name=original_sheet_name, keep_default_na=False)
     except ValueError:
-        df_raw = pd.read_excel(io.BytesIO(raw_file_bytes))
+        df_raw = pd.read_excel(io.BytesIO(raw_file_bytes), keep_default_na=False)
         original_sheet_name = 'Sheet1'
 
     df_raw_original = df_raw.copy()
@@ -474,7 +469,10 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     if 'Guía de Rastreo' in df_raw.columns:
         df_raw = df_raw.drop_duplicates(subset=['Guía de Rastreo'], keep='last').copy()
 
-    seller_pdv_map = df_raw[['Compañía remitente', 'Punto de Recogida']].dropna().drop_duplicates(subset=['Compañía remitente'])
+    seller_pdv_map = df_raw[['Compañía remitente', 'Punto de Recogida']].copy()
+    seller_pdv_map = seller_pdv_map[(seller_pdv_map['Compañía remitente'] != '') & (seller_pdv_map['Punto de Recogida'] != '')]
+    seller_pdv_map = seller_pdv_map.drop_duplicates(subset=['Compañía remitente'])
+
     seller_pdv_map = seller_pdv_map.rename(columns={'Punto de Recogida': 'PDV'})
     seller_pdv_map['PDV'] = seller_pdv_map['PDV'].astype(str).str.strip()
 
@@ -542,8 +540,6 @@ def generate_aliexpress(raw_file_bytes, spv_file_bytes):
     base_size = 14
 
     title_format = workbook.add_format({'bold': True, 'font_size': 36, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': base_font, 'text_wrap': True})
-    # BOLD 24PT DATE SUBTITLE - text_wrap added so long multi-day date ranges
-    # wrap instead of getting clipped at the merged-cell boundary.
     subtitle_format = workbook.add_format({'bold': True, 'font_size': 24, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'font_name': base_font, 'text_wrap': True})
     header_format = workbook.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': magenta, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
 
@@ -657,25 +653,29 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     spv_map.drop_duplicates(subset=['pdv'], inplace=True)
 
     try:
-        df_raw = pd.read_excel(io.BytesIO(raw_file_bytes), sheet_name='sheet0', engine='openpyxl')
+        df_raw = pd.read_excel(io.BytesIO(raw_file_bytes), sheet_name='sheet0', engine='openpyxl', keep_default_na=False)
     except ValueError:
-        df_raw = pd.read_excel(io.BytesIO(raw_file_bytes), sheet_name=0, engine='openpyxl')
+        df_raw = pd.read_excel(io.BytesIO(raw_file_bytes), sheet_name=0, engine='openpyxl', keep_default_na=False)
     df_raw.columns = df_raw.columns.str.strip()
 
-    if 'Fecha de estadísticas' in df_raw.columns and not df_raw['Fecha de estadísticas'].dropna().empty:
-        raw_date = df_raw['Fecha de estadísticas'].dropna().iloc[0]
+    if 'Fecha de estadísticas' in df_raw.columns and not df_raw['Fecha de estadísticas'].replace('', np.nan).dropna().empty:
+        raw_date = df_raw['Fecha de estadísticas'].replace('', np.nan).dropna().iloc[0]
         date_obj = pd.to_datetime(raw_date, errors='coerce')
         if pd.isna(date_obj):
             date_obj = pd.Timestamp(datetime.date.today())
     else:
         date_obj = pd.Timestamp(datetime.date.today())
 
-    # SEPARATED TITLE & SUBTITLE STRINGS
     main_title_str = "缺失扫描报告 OMISIÓN DE ESCANEO"
     subtitle_date_str = f"揽收日期 {date_obj.month}月{date_obj.day}日 Fecha de Recoleccion: {MONTHS_ES[date_obj.month]} {date_obj.day}"
     output_filename = f"MISSING SCAN {MONTHS_EN_CAPS[date_obj.month]} {date_obj.day}.xlsx"
 
     val_cols = ['El número de pedidos de escaneo', 'No. de escaneo faltante de recolección', 'Nº de guías con escaneo faltantes de salida']
+
+    for col in val_cols:
+        if col in df_raw.columns:
+            df_raw[col] = pd.to_numeric(df_raw[col], errors='coerce').fillna(0)
+
     pivot_raw = pd.pivot_table(df_raw, index=['Nombre del nodo'], values=val_cols, aggfunc='sum').reset_index()
     pivot_raw.rename(columns={'Nombre del nodo': 'pdv'}, inplace=True)
     pivot_raw['pdv'] = pivot_raw['pdv'].astype(str).str.strip()
@@ -697,7 +697,6 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
         del wb['Report']
     ws = wb.create_sheet(title='Report', index=0)
 
-    # EXACT TYPOGRAPHY SIZE REQUESTS: 36pt Title, 24pt Bold Subtitle, White Bold Totals
     font_title = Font(name='Calibri', size=36, bold=True, color='FFFFFF')
     font_subtitle_24 = Font(name='Calibri', size=24, bold=True, color='FFFFFF')
     font_white_bold = Font(name='Calibri', size=14, bold=True, color='FFFFFF')
@@ -713,13 +712,10 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
     thin_border = Border(left=Side(style='thin', color='A6A6A6'), right=Side(style='thin', color='A6A6A6'), top=Side(style='thin', color='A6A6A6'), bottom=Side(style='thin', color='A6A6A6'))
 
-    # EXPANDED COLUMN WIDTHS TO ELIMINATE CROPPING (widened further to give
-    # long PDV/SPV names extra breathing room)
     col_widths = {'A': 24, 'B': 22, 'C': 40, 'D': 22, 'E': 36, 'F': 36, 'G': 30, 'H': 36}
     for col_letter, width in col_widths.items():
         ws.column_dimensions[col_letter].width = width
 
-    # ROW 1: 36PT TITLE
     ws.merge_cells('A1:H1')
     cell_title = ws['A1']
     cell_title.value = main_title_str
@@ -728,7 +724,6 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     cell_title.alignment = align_center
     ws.row_dimensions[1].height = 60
 
-    # ROW 2: 24PT BOLD DATE SUBTITLE
     ws.merge_cells('A2:H2')
     cell_sub = ws['A2']
     cell_sub.value = subtitle_date_str
@@ -737,7 +732,6 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
     cell_sub.alignment = align_center
     ws.row_dimensions[2].height = dynamic_subtitle_height(subtitle_date_str, chars_per_line=108, base_height=38)
 
-    # ROW 3: TABLE HEADERS (EXACT WORDING FROM REFERENCE IMAGE)
     headers = [
         '负责人\nSPV',
         '区域\nZONA',
@@ -756,7 +750,6 @@ def generate_missing_scan(raw_file_bytes, spv_file_bytes):
         c.border = thin_border
     ws.row_dimensions[3].height = 80
 
-    # ROW 4: GRAND TOTAL
     gt_total = final_df['El número de pedidos de escaneo'].sum()
     gt_rec = final_df['No. de escaneo faltante de recolección'].sum()
     gt_rec_pct = gt_rec / gt_total if gt_total else 0
@@ -846,12 +839,12 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
 
     df_raw = None
     try:
-        df_raw = pd.read_excel(io.BytesIO(raw_file_bytes), engine='openpyxl')
+        df_raw = pd.read_excel(io.BytesIO(raw_file_bytes), engine='openpyxl', keep_default_na=False)
     except Exception:
         for enc in ['utf-8-sig', 'latin1', 'cp1252', 'gbk']:
             for sep in [',', '\t', ';', '|']:
                 try:
-                    df_temp = pd.read_csv(io.BytesIO(raw_file_bytes), sep=sep, encoding=enc, on_bad_lines='skip', low_memory=False)
+                    df_temp = pd.read_csv(io.BytesIO(raw_file_bytes), sep=sep, encoding=enc, on_bad_lines='skip', low_memory=False, keep_default_na=False)
                     if len(df_temp.columns) > 3:
                         df_raw = df_temp
                         break
@@ -913,7 +906,6 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     base_size = 14
 
     t_fmt = wb.add_format({'bold': True, 'font_size': 36, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font, 'text_wrap': True})
-
     s_fmt = wb.add_format({'bold': True, 'font_size': 24, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'font_name': base_font, 'text_wrap': True})
     h_fmt = wb.add_format({'bold': True, 'font_size': base_size, 'align': 'center', 'valign': 'vcenter', 'bg_color': dark_purple, 'font_color': 'white', 'border': 1, 'text_wrap': True, 'font_name': base_font})
 
@@ -933,7 +925,6 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     ws.merge_range('A1:G1', 'R7 CDMX 所有平台的揽收率', t_fmt)
     ws.set_row(0, 80)
     ws.merge_range('A2:G2', subtitle_str, s_fmt)
-
     ws.set_row(1, dynamic_subtitle_height(subtitle_str, chars_per_line=80, base_height=38))
 
     headers = ['', 'ZONA', '客户归属网点\nPDV', '当日包裹总数\nTotal de Guias', '已收取的包裹\nGuias Recolectadas', '待收取的包裹\nGuias por Recolectar', '商家拜访率\nRate %']
@@ -968,7 +959,6 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
             ws.write(c_row, 3, row['Total de Guias'], d_f)
             ws.write(c_row, 4, row['Guias Recolectadas'], d_f)
 
-            # BLANK WHEN ZERO FOR VISUAL CLEANLINESS
             por_rec_val = row['Guias por Recolectar']
             ws.write(c_row, 5, "" if por_rec_val == 0 else por_rec_val, d_f)
 
@@ -1014,7 +1004,7 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
     xls = pd.ExcelFile(io.BytesIO(raw_file_bytes), engine='openpyxl')
     target_sheet = [s for s in xls.sheet_names if '未取件客户明细' in s or '网点明细' in s]
     sheet_to_load = target_sheet[0] if target_sheet else 0
-    df_raw = pd.read_excel(io.BytesIO(raw_file_bytes), sheet_name=sheet_to_load, engine='openpyxl')
+    df_raw = pd.read_excel(io.BytesIO(raw_file_bytes), sheet_name=sheet_to_load, engine='openpyxl', keep_default_na=False)
     df_raw.columns = df_raw.columns.astype(str).str.strip()
 
     pdv_col = [c for c in df_raw.columns if '网点' in c][0]
@@ -1084,7 +1074,6 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
     ws['A1'].value, ws['A1'].font, ws['A1'].fill, ws['A1'].alignment = '问题件跟进 Seguimiento Paquetes de Anomalia', Font(name='Calibri', size=36, bold=True, color='FFFFFF'), fil_main, a_c
     ws.row_dimensions[1].height = 60
 
-    # BOLD 24PT DATE SUBTITLE
     ws.merge_cells('A2:G2')
     ws['A2'].value, ws['A2'].font, ws['A2'].fill, ws['A2'].alignment = subtitle_str, font_subtitle_24, fil_main, a_c
     ws.row_dimensions[2].height = dynamic_subtitle_height(subtitle_str, chars_per_line=95, base_height=38)
@@ -1095,7 +1084,6 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
         c.font, c.fill, c.alignment, c.border = font_white_bold, fil_dark_grey, a_c, thin_border
     ws.row_dimensions[3].height = 75
 
-    # GRAND TOTAL ROW: QUANTITIES IN DARK GREY, PERCENTAGE RATE ONLY IN RED
     gt_p, gt_r, gt_n = df_report['Pendientes'].sum(), df_report['Registrados'].sum(), df_report['No_Registrados'].sum()
 
     ws.merge_cells('A4:C4')
@@ -1105,7 +1093,6 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
         c = ws.cell(row=4, column=i, value=val)
         c.font, c.fill, c.alignment, c.number_format, c.border = font_white_bold, fil_dark_grey, a_c, '#,##0', thin_border
 
-    # PERCENTAGE CELL HIGHLIGHTED RED (fil_main) ONLY
     c_gt_rate = ws.cell(row=4, column=7, value=gt_r/gt_p if gt_p else 0)
     c_gt_rate.font, c_gt_rate.fill, c_gt_rate.alignment, c_gt_rate.number_format, c_gt_rate.border = font_white_bold, fil_main, a_c, '0.00%', thin_border
     ws.row_dimensions[4].height = 34
@@ -1130,7 +1117,6 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
 
             ws.cell(row=current_row, column=3, value=row['PDV']).alignment = a_c
 
-            # BLANK ZERO VALUES FOR INDIVIDUAL PDV DATA ROWS
             v_pend = row['Pendientes']
             v_reg = row['Registrados']
             v_noreg = row['No_Registrados']
@@ -1174,7 +1160,6 @@ def generate_anomalies(raw_file_bytes, spv_file_bytes, raw_filename):
             c = ws.cell(row=current_row, column=col, value=val)
             c.font, c.fill, c.alignment, c.number_format, c.border = font_black_bold, fil_y, a_c, '#,##0', thin_border
 
-        # PERCENTAGE RATE CELL ONLY IN RED (fil_main)
         c_sub_rate = ws.cell(row=current_row, column=7, value=s_r/s_p if s_p else 0)
         c_sub_rate.font, c_sub_rate.fill, c_sub_rate.alignment, c_sub_rate.number_format, c_sub_rate.border = font_white_bold, fil_main, a_c, '0.00%', thin_border
 
@@ -1193,7 +1178,6 @@ if check_password():
     st.title("📊 Automated Reporting Portal")
     st.markdown("Upload your daily raw data below to instantly generate standardized Excel reports.")
 
-    # 1. READ "SUPERVISORES VISITAS.xlsx" FOR TIKTOK
     try:
         with open("SUPERVISORES VISITAS.xlsx", "rb") as f:
             spv_visitas_bytes = f.read()
@@ -1204,7 +1188,6 @@ if check_password():
         )
         st.stop()
 
-    # 2. READ "SUPERVISORES.xlsx" FOR EVERYTHING ELSE
     try:
         with open("SUPERVISORES.xlsx", "rb") as f:
             spv_general_bytes = f.read()
@@ -1235,11 +1218,6 @@ if check_password():
     if raw_data is not None:
         st.caption(f"Loaded: **{raw_data.name}** ({raw_data.size / 1024:.1f} KB)")
 
-    # Persist generated reports across Streamlit reruns. Without this, clicking
-    # the download button (which itself triggers a rerun) would wipe out the
-    # 'Generate Report' button's block and make the download button/success
-    # message disappear, forcing the user to regenerate the report just to
-    # download it a second time.
     if "report_bytes" not in st.session_state:
         st.session_state.report_bytes = None
         st.session_state.report_filename = None
