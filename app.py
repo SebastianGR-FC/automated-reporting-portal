@@ -103,9 +103,42 @@ def clean_spv_value(val):
     Consolidates CEDIS, NaN, empty strings, and unmapped rows into #N/A
     """
     val_str = str(val).strip() if pd.notna(val) else '#N/A'
-    if val_str.upper() in ['CEDIS', 'NAN', '', 'NONE', 'NONETYPE']:
+    if val_str.upper() in ['CEDIS', 'NAN', '', 'NONE', 'NONETYPE', '#N/A', 'N/A']:
         return '#N/A'
     return val_str
+
+
+def clean_zona_value(val):
+    """
+    Consolidates empty, NaN, or unmapped ZONA values into #N/A
+    """
+    val_str = str(val).strip() if pd.notna(val) else '#N/A'
+    if val_str.upper() in ['NAN', '', 'NONE', 'NONETYPE', '#N/A', 'N/A']:
+        return '#N/A'
+    return val_str
+
+
+def normalize_na_cell(val):
+    """
+    Ensures missing/zero/NA values in hour and FORMULA columns of TABLA are '#N/A'
+    and never blank or float NaN.
+    """
+    if pd.isna(val):
+        return '#N/A'
+    s = str(val).strip()
+    if s == '' or s.upper() in ['NAN', 'NONE', 'NONETYPE', '#N/A', 'N/A']:
+        return '#N/A'
+    try:
+        num = float(s)
+        if np.isnan(num) or np.isinf(num):
+            return '#N/A'
+        if num == 0:
+            return '#N/A'
+        if num.is_integer():
+            return int(num)
+        return num
+    except Exception:
+        return s
 
 
 def clean_spv_df(spv_file_bytes):
@@ -120,7 +153,7 @@ def clean_spv_df(spv_file_bytes):
         df_spv.rename(columns={'SUPERVISOR': 'SPV'}, inplace=True)
 
     if 'ZONA' not in df_spv.columns:
-        df_spv['ZONA'] = ''
+        df_spv['ZONA'] = '#N/A'
 
     if 'PDV' not in df_spv.columns:
         df_spv['PDV'] = ''
@@ -192,19 +225,23 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
     df_raw = pd.read_excel(xls_raw, sheet_name=original_sheet_name, keep_default_na=False)
 
     # Clean redundant calculated columns from previous runs if present in raw data sheet
-    for col in ['SPV', 'SLR']:
+    for col in ['SPV', 'ZONA', 'SLR']:
         if col in df_raw.columns:
             df_raw = df_raw.drop(columns=[col])
 
     df_raw_copy = df_raw.copy()
 
-    # Load supervisor mapping file
+    # Load supervisor mapping file (SUPERVISORES.xlsx)
     df_sup = clean_spv_df(spv_file_bytes)
     df_sup.rename(columns={'SPV': 'SUPERVISOR'}, inplace=True)
 
     if 'PDV' in df_sup.columns:
         df_sup['PDV'] = df_sup['PDV'].astype(str).str.strip()
     df_sup['PDV_lower'] = df_sup['PDV'].astype(str).str.strip().str.lower()
+    df_sup['ZONA_clean'] = df_sup['ZONA'].apply(clean_zona_value)
+    df_sup['SUPERVISOR_clean'] = df_sup['SUPERVISOR'].apply(clean_spv_value)
+
+    sup_lookup_df = df_sup[['PDV_lower', 'SUPERVISOR_clean', 'ZONA_clean']].drop_duplicates(subset=['PDV_lower'])
 
     if 'Punto de Recogida' in df_raw.columns:
         df_raw['Punto de Recogida'] = df_raw['Punto de Recogida'].astype(str).str.strip()
@@ -242,10 +279,10 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
     )
     df_raw['SLR'] = df_raw['SLR'].replace(['', 'nan', 'NaN', 'None'], 'SIN NOMBRE')
 
-    df_raw = pd.merge(df_raw, df_sup[['PDV_lower', 'SUPERVISOR']], on='PDV_lower', how='left')
-    df_raw.rename(columns={'SUPERVISOR': 'SPV'}, inplace=True)
-
-    df_raw['SPV'] = df_raw['SPV'].apply(clean_spv_value)
+    df_raw = pd.merge(df_raw, sup_lookup_df, on='PDV_lower', how='left')
+    df_raw['SPV'] = df_raw['SUPERVISOR_clean'].apply(clean_spv_value)
+    df_raw['ZONA'] = df_raw['ZONA_clean'].apply(clean_zona_value)
+    df_raw.drop(columns=['SUPERVISOR_clean', 'ZONA_clean'], inplace=True, errors='ignore')
 
     if 'Estado de la orden' in df_raw.columns:
         df_raw['Estado_upper'] = df_raw['Estado de la orden'].astype(str).str.upper().str.strip()
@@ -261,12 +298,13 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
     df_current_counts = df_valid.groupby('SLR')['Guía de Rastreo'].count().reset_index(name=time_col)
 
     if target_hour == 9:
-        df_mapping = df_valid[['SLR', 'Punto de Recogida', 'SPV']].drop_duplicates(subset=['SLR'])
+        df_mapping = df_valid[['SLR', 'Punto de Recogida', 'SPV', 'ZONA']].drop_duplicates(subset=['SLR'])
         df_mapping.rename(columns={'Punto de Recogida': 'PDV'}, inplace=True)
 
         df_tabla = pd.merge(df_mapping, df_current_counts, on='SLR', how='left')
         df_tabla[time_col] = df_tabla[time_col].fillna(0).astype(int)
         df_tabla['SPV'] = df_tabla['SPV'].apply(clean_spv_value)
+        df_tabla['ZONA'] = df_tabla['ZONA'].apply(clean_zona_value)
 
         df_template_source = df_tabla.copy()
         vol_col = time_col
@@ -275,16 +313,41 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         if time_col in df_tabla.columns: df_tabla.drop(columns=[time_col], inplace=True)
         if 'FORMULA' in df_tabla.columns: df_tabla.drop(columns=['FORMULA'], inplace=True)
 
-        df_tabla = pd.merge(df_tabla, df_current_counts, on='SLR', how='left')
-        df_tabla['SPV'] = df_tabla['SPV'].apply(clean_spv_value)
+        # Ensure ZONA and SPV exist and are updated from SUPERVISORES.xlsx if needed
+        if 'PDV' in df_tabla.columns:
+            df_tabla['PDV_lower'] = df_tabla['PDV'].astype(str).str.strip().str.lower()
+            df_tabla = pd.merge(df_tabla, sup_lookup_df, on='PDV_lower', how='left')
+            if 'SPV' in df_tabla.columns:
+                df_tabla['SPV'] = df_tabla['SUPERVISOR_clean'].combine_first(df_tabla['SPV'])
+            else:
+                df_tabla['SPV'] = df_tabla['SUPERVISOR_clean']
+            if 'ZONA' in df_tabla.columns:
+                df_tabla['ZONA'] = df_tabla['ZONA_clean'].combine_first(df_tabla['ZONA'])
+            else:
+                df_tabla['ZONA'] = df_tabla['ZONA_clean']
+            df_tabla.drop(columns=['PDV_lower', 'SUPERVISOR_clean', 'ZONA_clean'], inplace=True, errors='ignore')
+        else:
+            if 'ZONA' not in df_tabla.columns:
+                df_tabla['ZONA'] = '#N/A'
 
-        df_tabla[time_col] = df_tabla[time_col].apply(lambda x: '#N/A' if pd.isna(x) or x == 0 or x == '' else int(x))
+        df_tabla['SPV'] = df_tabla['SPV'].apply(clean_spv_value)
+        df_tabla['ZONA'] = df_tabla['ZONA'].apply(clean_zona_value)
+
+        # Normalize prior hour columns so '#N/A' is never lost or turned blank
+        for prev_col in ['9', '12', '3', '5']:
+            if prev_col in df_tabla.columns and prev_col != time_col:
+                df_tabla[prev_col] = df_tabla[prev_col].apply(normalize_na_cell)
+
+        df_tabla = pd.merge(df_tabla, df_current_counts, on='SLR', how='left')
+
+        # 0s or missing counts in time slots 12, 3, 5 mean all packages collected -> '#N/A'
+        df_tabla[time_col] = df_tabla[time_col].apply(normalize_na_cell)
 
         if '9' in df_tabla.columns:
             def calculate_formula(row):
-                val_9 = row['9']
-                val_curr = row[time_col]
-                if str(val_curr) == '#N/A' or str(val_9) == '#N/A':
+                val_9 = normalize_na_cell(row['9'])
+                val_curr = normalize_na_cell(row[time_col])
+                if val_curr == '#N/A' or val_9 == '#N/A':
                     return '#N/A'
                 try:
                     diff = int(val_9) - int(val_curr)
@@ -296,41 +359,75 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         else:
             raise ValueError("Error: Columna '9' no encontrada en la hoja TABLA. Procesa primero las 9 AM.")
 
+        # Filter for sellers where formula results in 0 (Zero packages collected so far)
         df_template_source = df_tabla[df_tabla['FORMULA'].astype(str) == '0'].copy()
         vol_col = time_col
 
-    desired_order = ['SPV', 'PDV', 'SLR']
+    # REORDER TABLA COLUMNS: SPV -> ZONA -> PDV -> SLR -> hours (9, 12, 3, 5, FORMULA, etc.)
+    desired_order = ['SPV', 'ZONA', 'PDV', 'SLR']
     other_columns = [col for col in df_tabla.columns if col not in desired_order]
     final_tabla_columns = [col for col in desired_order if col in df_tabla.columns] + other_columns
     df_tabla = df_tabla[final_tabla_columns]
 
-    # 6. TEMPLATE GENERATION WITH CUSTOM SORTING (#N/A AT THE VERY END)
-    unique_spvs = [s for s in df_template_source['SPV'].unique() if str(s).strip() != '#N/A']
-    unique_spvs.sort()
-    if '#N/A' in df_template_source['SPV'].unique() or '#N/A' in df_tabla['SPV'].unique():
-        unique_spvs.append('#N/A')
+    # Ensure every numeric/hour column in df_tabla has '#N/A' instead of empty/NaN
+    for col in other_columns:
+        df_tabla[col] = df_tabla[col].apply(
+            lambda v: '0' if str(v).strip() == '0' else normalize_na_cell(v)
+        )
+
+    # 6. TEMPLATE GENERATION GROUPED BY (SUPERVISOR, ZONA) WITH CUSTOM SORTING (#N/A AT THE VERY END)
+    if not df_template_source.empty:
+        pairs = df_template_source[['SPV', 'ZONA']].drop_duplicates().to_records(index=False)
+    else:
+        pairs = []
+
+    valid_pairs = []
+    has_na_pair = False
+    for spv_val, zona_val in pairs:
+        s_clean = clean_spv_value(spv_val)
+        z_clean = clean_zona_value(zona_val)
+        if s_clean == '#N/A' or z_clean == '#N/A':
+            has_na_pair = True
+        else:
+            valid_pairs.append((s_clean, z_clean))
+
+    valid_pairs.sort(key=lambda pair: (pair[0], pair[1]))
+    if has_na_pair or ('#N/A' in df_tabla['SPV'].unique()) or ('#N/A' in df_tabla['ZONA'].unique()):
+        valid_pairs.append(('#N/A', '#N/A'))
 
     template_data = []
-    for spv in unique_spvs:
-        group = df_template_source[df_template_source['SPV'] == spv]
+    for spv, zona in valid_pairs:
+        if spv == '#N/A' and zona == '#N/A':
+            group = df_template_source[
+                (df_template_source['SPV'].apply(clean_spv_value) == '#N/A') |
+                (df_template_source['ZONA'].apply(clean_zona_value) == '#N/A')
+            ]
+        else:
+            group = df_template_source[
+                (df_template_source['SPV'].apply(clean_spv_value) == spv) &
+                (df_template_source['ZONA'].apply(clean_zona_value) == zona)
+            ]
+
         group_vols = pd.to_numeric(group[vol_col], errors='coerce').fillna(0)
 
         template_data.append({
             'SUPERVISOR': spv,
+            'ZONA': zona,
             'TOTAL TT SELLERS': len(group),
-            '1-10': len(group[(group_vols >= 1) & (group_vols <= 10)]),
-            '11-50': len(group[(group_vols >= 11) & (group_vols <= 50)]),
-            '+50': len(group[group_vols > 50])
+            '1-10': int(((group_vols >= 1) & (group_vols <= 10)).sum()),
+            '11-50': int(((group_vols >= 11) & (group_vols <= 50)).sum()),
+            '+50': int((group_vols > 50).sum())
         })
 
-    df_template = pd.DataFrame(template_data)
+    df_template = pd.DataFrame(template_data, columns=['SUPERVISOR', 'ZONA', 'TOTAL TT SELLERS', '1-10', '11-50', '+50'])
 
     total_row = {
         'SUPERVISOR': 'TOTAL',
-        'TOTAL TT SELLERS': df_template['TOTAL TT SELLERS'].sum() if not df_template.empty else 0,
-        '1-10': df_template['1-10'].sum() if not df_template.empty else 0,
-        '11-50': df_template['11-50'].sum() if not df_template.empty else 0,
-        '+50': df_template['+50'].sum() if not df_template.empty else 0
+        'ZONA': '',
+        'TOTAL TT SELLERS': int(df_template['TOTAL TT SELLERS'].sum()) if not df_template.empty else 0,
+        '1-10': int(df_template['1-10'].sum()) if not df_template.empty else 0,
+        '11-50': int(df_template['11-50'].sum()) if not df_template.empty else 0,
+        '+50': int(df_template['+50'].sum()) if not df_template.empty else 0
     }
     df_template = pd.concat([df_template, pd.DataFrame([total_row])], ignore_index=True)
 
@@ -358,28 +455,32 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         time_badge_fmt = workbook.add_format({'bg_color': '#FFFF00', 'bold': True, 'italic': True, 'align': 'center', 'valign': 'vcenter', 'font_size': 18, 'font_name': font_family, 'border': 1})
 
         data_fmt = workbook.add_format({'border': 1, 'align': 'left', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
+        data_center_fmt = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
         data_num_fmt = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
 
-        worksheet.set_column('A:A', 54)
-        worksheet.set_column('B:E', 24)
+        worksheet.set_column('A:A', 50)
+        worksheet.set_column('B:B', 20)
+        worksheet.set_column('C:F', 22)
 
-        worksheet.merge_range('B1:D1', 'TT SELLERS TO VISIT BASED ON THE # OF PACKAGES', title_fmt)
-        worksheet.merge_range('B2:D2', '按包裹数量需拜访的TT卖家', sub_title_fmt)
+        worksheet.merge_range('C1:E1', 'TT SELLERS TO VISIT BASED ON THE # OF PACKAGES', title_fmt)
+        worksheet.merge_range('C2:E2', '按包裹数量需拜访的TT卖家', sub_title_fmt)
 
         formatted_time = get_checkpoint_time_label(target_hour)
-        worksheet.merge_range('E1:E2', formatted_time, time_badge_fmt)
+        worksheet.merge_range('F1:F2', formatted_time, time_badge_fmt)
         worksheet.set_row(0, 30)
         worksheet.set_row(1, 30)
 
         worksheet.write(2, 0, 'SUPERVISOR', blue_bg)
-        worksheet.write(2, 1, 'TOTAL TT SELLERS', purple_bg)
-        worksheet.write(2, 2, '1-10', red_bg)
-        worksheet.write(2, 3, '11-50', red_bg)
-        worksheet.write(2, 4, '+50', red_bg)
+        worksheet.write(2, 1, 'ZONA', blue_bg)
+        worksheet.write(2, 2, 'TOTAL TT SELLERS', purple_bg)
+        worksheet.write(2, 3, '1-10', red_bg)
+        worksheet.write(2, 4, '11-50', red_bg)
+        worksheet.write(2, 5, '+50', red_bg)
         worksheet.set_row(2, 34)
 
         worksheet.write(3, 0, '', purple_date_bg)
-        worksheet.merge_range(3, 1, 3, 4, report_date_str, purple_date_bg)
+        worksheet.write(3, 1, '', purple_date_bg)
+        worksheet.merge_range(3, 2, 3, 5, report_date_str, purple_date_bg)
         worksheet.set_row(3, 26)
 
         current_row = 4
@@ -387,6 +488,7 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
             is_total_row = (row['SUPERVISOR'] == 'TOTAL')
             row_format = yellow_bg if is_total_row else data_num_fmt
             str_format = yellow_bg if is_total_row else data_fmt
+            zona_format = yellow_bg if is_total_row else data_center_fmt
 
             v_tot = row['TOTAL TT SELLERS']
             v_1_10 = row['1-10']
@@ -399,29 +501,48 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
             disp_50 = int(v_50) if is_total_row or v_50 != 0 else ""
 
             worksheet.write(current_row, 0, str(row['SUPERVISOR']), str_format)
-            worksheet.write(current_row, 1, disp_tot, row_format)
-            worksheet.write(current_row, 2, disp_1_10, row_format)
-            worksheet.write(current_row, 3, disp_11_50, row_format)
-            worksheet.write(current_row, 4, disp_50, row_format)
+            worksheet.write(current_row, 1, str(row['ZONA']), zona_format)
+            worksheet.write(current_row, 2, disp_tot, row_format)
+            worksheet.write(current_row, 3, disp_1_10, row_format)
+            worksheet.write(current_row, 4, disp_11_50, row_format)
+            worksheet.write(current_row, 5, disp_50, row_format)
             worksheet.set_row(current_row, 22)
             current_row += 1
 
         # --- Sheet 2: TABLA ---
-        df_tabla_out = df_tabla.drop(columns=['PDV_lower'], errors='ignore')
-        df_tabla_out.to_excel(writer, sheet_name='TABLA', index=False)
-        worksheet_tabla = writer.sheets['TABLA']
+        worksheet_tabla = workbook.add_worksheet('TABLA')
         worksheet_tabla.hide_gridlines(0)
 
         tabla_header = workbook.add_format({'bold': True, 'bg_color': '#D9E1F2', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 12})
         tabla_data = workbook.add_format({'border': 1, 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
+        tabla_num = workbook.add_format({'border': 1, 'align': 'right', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
+        tabla_na = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
 
-        for col_num, value in enumerate(df_tabla_out.columns):
-            worksheet_tabla.write(0, col_num, value, tabla_header)
-            val_lens = df_tabla_out[value].astype(str).str.len()
+        worksheet_tabla.set_row(0, 26)
+        for col_num, value in enumerate(df_tabla.columns):
+            worksheet_tabla.write(0, col_num, str(value), tabla_header)
+            val_lens = df_tabla[value].astype(str).str.len()
             max_val_len = val_lens.max() if not val_lens.empty and pd.notna(val_lens.max()) else 0
             max_len = max(max_val_len, len(str(value))) + 4
-            worksheet_tabla.set_column(col_num, col_num, max(max_len, 14), tabla_data)
-        worksheet_tabla.set_row(0, 26)
+            worksheet_tabla.set_column(col_num, col_num, max(max_len, 14))
+
+        for r_idx, row in df_tabla.iterrows():
+            excel_r = r_idx + 1
+            worksheet_tabla.set_row(excel_r, 20)
+            for c_idx, col_name in enumerate(df_tabla.columns):
+                cell_val = row[col_name]
+                if col_name in ['SPV', 'ZONA', 'PDV', 'SLR']:
+                    txt = '#N/A' if (pd.isna(cell_val) or str(cell_val).strip() == '') else str(cell_val)
+                    worksheet_tabla.write(excel_r, c_idx, txt, tabla_data)
+                else:
+                    if str(cell_val).strip() == '0':
+                        worksheet_tabla.write(excel_r, c_idx, 0, tabla_num)
+                    else:
+                        norm = normalize_na_cell(cell_val)
+                        if norm == '#N/A':
+                            worksheet_tabla.write(excel_r, c_idx, '#N/A', tabla_na)
+                        else:
+                            worksheet_tabla.write(excel_r, c_idx, norm, tabla_num)
 
         # --- Sheet 3: ORIGINAL RAW DATA ---
         df_raw_copy.to_excel(writer, sheet_name=original_sheet_name, index=False)
@@ -439,7 +560,6 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
             worksheet_raw.set_column(col_num, col_num, max(max_len, 12), raw_data_fmt)
         worksheet_raw.set_row(0, 24)
 
-    # Fecha actual en zona horaria CDMX (UTC-6) + corte horario (9, 12, 3, 5)
     cdmx_tz = datetime.timezone(datetime.timedelta(hours=-6))
     now_cdmx = datetime.datetime.now(cdmx_tz)
     today_str = f"{MONTHS_EN_CAPS[now_cdmx.month]} {now_cdmx.day}"
@@ -925,6 +1045,7 @@ def generate_r7_cdmx(raw_file_bytes, spv_file_bytes):
     ws.merge_range('A1:G1', 'R7 CDMX 所有平台的揽收率', t_fmt)
     ws.set_row(0, 80)
     ws.merge_range('A2:G2', subtitle_str, s_fmt)
+
     ws.set_row(1, dynamic_subtitle_height(subtitle_str, chars_per_line=80, base_height=38))
 
     headers = ['', 'ZONA', '客户归属网点\nPDV', '当日包裹总数\nTotal de Guias', '已收取的包裹\nGuias Recolectadas', '待收取的包裹\nGuias por Recolectar', '商家拜访率\nRate %']
@@ -1182,11 +1303,7 @@ if check_password():
         with open("SUPERVISORES VISITAS.xlsx", "rb") as f:
             spv_visitas_bytes = f.read()
     except FileNotFoundError:
-        st.error(
-            "🚨 **CRITICAL ERROR:** `SUPERVISORES VISITAS.xlsx` was not found in the root directory. "
-            "Please make sure the file is saved in the repository on GitHub."
-        )
-        st.stop()
+        spv_visitas_bytes = None
 
     try:
         with open("SUPERVISORES.xlsx", "rb") as f:
@@ -1235,7 +1352,7 @@ if check_password():
             with st.spinner(f'Crunching the numbers and formatting your {report_type} report...'):
                 try:
                     if report_type == "TIKTOK PENDING VISITS":
-                        processed_file, filename = generate_tiktok_visits(raw_data.getvalue(), spv_visitas_bytes)
+                        processed_file, filename = generate_tiktok_visits(raw_data.getvalue(), spv_general_bytes)
                     elif report_type == "MISSING SCAN":
                         processed_file, filename = generate_missing_scan(raw_data.getvalue(), spv_general_bytes)
                     elif report_type == "R7 CDMX":
