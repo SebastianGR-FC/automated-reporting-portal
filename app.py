@@ -313,7 +313,6 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         if time_col in df_tabla.columns: df_tabla.drop(columns=[time_col], inplace=True)
         if 'FORMULA' in df_tabla.columns: df_tabla.drop(columns=['FORMULA'], inplace=True)
 
-        # Ensure ZONA and SPV exist and are updated from SUPERVISORES.xlsx if needed
         if 'PDV' in df_tabla.columns:
             df_tabla['PDV_lower'] = df_tabla['PDV'].astype(str).str.strip().str.lower()
             df_tabla = pd.merge(df_tabla, sup_lookup_df, on='PDV_lower', how='left')
@@ -333,14 +332,11 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         df_tabla['SPV'] = df_tabla['SPV'].apply(clean_spv_value)
         df_tabla['ZONA'] = df_tabla['ZONA'].apply(clean_zona_value)
 
-        # Normalize prior hour columns so '#N/A' is never lost or turned blank
         for prev_col in ['9', '12', '3', '5']:
             if prev_col in df_tabla.columns and prev_col != time_col:
                 df_tabla[prev_col] = df_tabla[prev_col].apply(normalize_na_cell)
 
         df_tabla = pd.merge(df_tabla, df_current_counts, on='SLR', how='left')
-
-        # 0s or missing counts in time slots 12, 3, 5 mean all packages collected -> '#N/A'
         df_tabla[time_col] = df_tabla[time_col].apply(normalize_na_cell)
 
         if '9' in df_tabla.columns:
@@ -359,7 +355,6 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         else:
             raise ValueError("Error: Columna '9' no encontrada en la hoja TABLA. Procesa primero las 9 AM.")
 
-        # Filter for sellers where formula results in 0 (Zero packages collected so far)
         df_template_source = df_tabla[df_tabla['FORMULA'].astype(str) == '0'].copy()
         vol_col = time_col
 
@@ -369,7 +364,6 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
     final_tabla_columns = [col for col in desired_order if col in df_tabla.columns] + other_columns
     df_tabla = df_tabla[final_tabla_columns]
 
-    # Ensure every numeric/hour column in df_tabla has '#N/A' instead of empty/NaN
     for col in other_columns:
         df_tabla[col] = df_tabla[col].apply(
             lambda v: '0' if str(v).strip() == '0' else normalize_na_cell(v)
@@ -444,31 +438,30 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
 
         font_family = 'Times New Roman'
 
-        blue_bg = workbook.add_format({'bg_color': '#5B9BD5', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
-        purple_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'text_wrap': True, 'font_name': font_family, 'font_size': 13})
-        purple_date_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 14})
-        red_bg = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
-        yellow_bg = workbook.add_format({'bg_color': '#FFFF00', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
+        blue_bg = workbook.add_format({'bg_color': '#5B9BD5', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 12})
+        purple_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'text_wrap': True, 'font_name': font_family, 'font_size': 12})
+        purple_date_bg = workbook.add_format({'bg_color': '#7030A0', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 13})
+        red_bg = workbook.add_format({'bg_color': '#C00000', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 12})
+        yellow_bg = workbook.add_format({'bg_color': '#FFFF00', 'font_color': 'black', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bold': True, 'font_name': font_family, 'font_size': 12})
 
-        title_fmt = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family, 'text_wrap': True})
-        sub_title_fmt = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family, 'text_wrap': True})
-        time_badge_fmt = workbook.add_format({'bg_color': '#FFFF00', 'bold': True, 'italic': True, 'align': 'center', 'valign': 'vcenter', 'font_size': 18, 'font_name': font_family, 'border': 1})
+        combined_title_fmt = workbook.add_format({'bold': True, 'font_size': 13, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family, 'text_wrap': True})
+        time_badge_fmt = workbook.add_format({'bg_color': '#FFFF00', 'bold': True, 'italic': True, 'align': 'center', 'valign': 'vcenter', 'font_size': 16, 'font_name': font_family, 'border': 1})
 
-        data_fmt = workbook.add_format({'border': 1, 'align': 'left', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
-        data_center_fmt = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
+        data_fmt = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
         data_num_fmt = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_name': font_family, 'font_size': 11})
 
-        worksheet.set_column('A:A', 50)
-        worksheet.set_column('B:B', 20)
-        worksheet.set_column('C:F', 22)
+        # Columna SUPERVISOR más compacta (ancho 26)
+        worksheet.set_column('A:A', 26)
+        worksheet.set_column('B:B', 18)
+        worksheet.set_column('C:C', 22)
+        worksheet.set_column('D:F', 16)
 
-        worksheet.merge_range('C1:E1', 'TT SELLERS TO VISIT BASED ON THE # OF PACKAGES', title_fmt)
-        worksheet.merge_range('C2:E2', '按包裹数量需拜访的TT卖家', sub_title_fmt)
-
+        # Título combinado en A1:E2 y hora en F1:F2
+        worksheet.merge_range('A1:E2', 'TT SELLERS TO VISIT BASED ON THE # OF PACKAGES\n按包裹数量需拜访的TT卖家', combined_title_fmt)
         formatted_time = get_checkpoint_time_label(target_hour)
         worksheet.merge_range('F1:F2', formatted_time, time_badge_fmt)
-        worksheet.set_row(0, 30)
-        worksheet.set_row(1, 30)
+        worksheet.set_row(0, 22)
+        worksheet.set_row(1, 22)
 
         worksheet.write(2, 0, 'SUPERVISOR', blue_bg)
         worksheet.write(2, 1, 'ZONA', blue_bg)
@@ -476,19 +469,18 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
         worksheet.write(2, 3, '1-10', red_bg)
         worksheet.write(2, 4, '11-50', red_bg)
         worksheet.write(2, 5, '+50', red_bg)
-        worksheet.set_row(2, 34)
+        worksheet.set_row(2, 30)
 
         worksheet.write(3, 0, '', purple_date_bg)
         worksheet.write(3, 1, '', purple_date_bg)
         worksheet.merge_range(3, 2, 3, 5, report_date_str, purple_date_bg)
-        worksheet.set_row(3, 26)
+        worksheet.set_row(3, 24)
 
         current_row = 4
         for _, row in df_template.iterrows():
             is_total_row = (row['SUPERVISOR'] == 'TOTAL')
             row_format = yellow_bg if is_total_row else data_num_fmt
-            str_format = yellow_bg if is_total_row else data_fmt
-            zona_format = yellow_bg if is_total_row else data_center_fmt
+            label_format = yellow_bg if is_total_row else data_fmt
 
             v_tot = row['TOTAL TT SELLERS']
             v_1_10 = row['1-10']
@@ -500,13 +492,13 @@ def generate_tiktok_visits(raw_file_bytes, spv_file_bytes):
             disp_11_50 = int(v_11_50) if is_total_row or v_11_50 != 0 else ""
             disp_50 = int(v_50) if is_total_row or v_50 != 0 else ""
 
-            worksheet.write(current_row, 0, str(row['SUPERVISOR']), str_format)
-            worksheet.write(current_row, 1, str(row['ZONA']), zona_format)
+            worksheet.write(current_row, 0, str(row['SUPERVISOR']), label_format)
+            worksheet.write(current_row, 1, str(row['ZONA']), label_format)
             worksheet.write(current_row, 2, disp_tot, row_format)
             worksheet.write(current_row, 3, disp_1_10, row_format)
             worksheet.write(current_row, 4, disp_11_50, row_format)
             worksheet.write(current_row, 5, disp_50, row_format)
-            worksheet.set_row(current_row, 22)
+            worksheet.set_row(current_row, 20)
             current_row += 1
 
         # --- Sheet 2: TABLA ---
